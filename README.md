@@ -1,686 +1,151 @@
 <div align="center">
 
-# RoALT
+# RoALT for macOS
 
-### macOS port of the RoALT Roblox account manager
+### A native Apple Silicon port of the Roblox account manager
 
-A native Apple Silicon build with the original React interface and a macOS backend.<br>
-This is an in-progress port of [inspectsoftware/RoALT](https://github.com/inspectsoftware/RoALT), not a one-to-one Windows feature replacement yet.
+This fork ports [inspectsoftware/RoALT](https://github.com/inspectsoftware/RoALT) to macOS. It keeps the original React interface and replaces Windows system calls with macOS implementations. **The port is still in progress; it does not yet have every Windows feature.**
 
-[![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon-b4f000?style=for-the-badge&logo=apple&labelColor=1a1a1a)](#macos-port-status)
-[![Windows upstream](https://img.shields.io/badge/Windows-upstream-0078d4?style=for-the-badge&logo=windows&labelColor=1a1a1a)](https://github.com/inspectsoftware/RoALT)
-[![Discord](https://img.shields.io/badge/Discord-join-5865f2?style=for-the-badge&logo=discord&logoColor=white&labelColor=1a1a1a)](https://discord.gg/qcj68tHKCX)
+![RoALT interface](docs/images/home.png)
 
-![Tauri 2](https://img.shields.io/badge/Tauri-2-24c8db?style=flat-square&logo=tauri&logoColor=white)
-![Rust](https://img.shields.io/badge/Rust-2024-dea584?style=flat-square&logo=rust&logoColor=white)
-![React 19](https://img.shields.io/badge/React-19-61dafb?style=flat-square&logo=react&logoColor=white)
-![No telemetry](https://img.shields.io/badge/telemetry-none-b4f000?style=flat-square)
-
-<br>
-
-[**⬇ Build for macOS**](docs/MACOS_PORT.md#build-and-install) &nbsp;·&nbsp;
-[**💬 Discord**](https://discord.gg/qcj68tHKCX) &nbsp;·&nbsp;
-[Quick start](#-quick-start) &nbsp;·&nbsp;
-[Privacy](#-safety-and-privacy) &nbsp;·&nbsp;
-[For developers](#-for-developers)
-
-<br>
-
-<img src="docs/images/home.png" alt="RoALT's Home page: four running clients with live previews, and CPU, memory and GPU dials" width="900">
+[Features](#features) · [Install](#install-on-macos) · [FAQ](#faq) · [Technical notes](docs/MACOS_PORT.md)
 
 </div>
 
-<br>
-
-## macOS port status
-
-This repository contains an **Apple Silicon macOS port in progress**. The interface is based on the original RoALT UI. The Windows descriptions below document the upstream app; use this table for the current Mac implementation. See [the macOS port notes](docs/MACOS_PORT.md) for behavior, limits, validation and installation details.
+## Features
 
 | Area | macOS status |
 |---|---|
-| Accounts, Roblox API, encrypted vault, master password, recovery, backups | Ported. Keychain replaces Windows DPAPI; Touch ID replaces Windows Hello where available. |
-| Multi-instance launch, batches, account launch, shared sign-in protection | Ported with native macOS process launch and a child sandbox. Two test clients ran together; authenticated simultaneous game joins still need user acceptance testing. |
-| CPU and memory monitoring, background priority, FPS/graphics settings | Ported with macOS system APIs and Roblox's own settings. Cooperative CPU caps can stutter; they are not kernel quotas. |
-| Window focus, minimize/restore, tiling, tiny windows, live previews | Ported. Accessibility and Screen Recording approval is required. Mac previews use 2/5/10 FPS rather than Windows' 15/30/60 FPS. |
-| Anti-AFK | Focus-mode Space input is ported and opt-in. It needs Accessibility and Input Monitoring. Actual in-game kick prevention is not yet verified. Background/minimized anti-AFK is not available. |
-| Core affinity/spreading, memory trimming, bandwidth shaping, GPU counters | Not ported. macOS does not provide equivalent supported controls or reliable counters for these implementations. |
-| Scheduled shutdown, network classification, automatic Roblox/RoALT installers and updates | Not ported. Related controls are hidden or rejected on Mac. |
-| Distribution | Local ad-hoc signed Apple Silicon app build. No Developer ID notarization, universal/Intel build, or Mac GitHub release yet. |
+| Accounts and vault | Roblox account management, account checks, encrypted database, master password, recovery code and encrypted backups are ported. Keychain replaces Windows DPAPI; Touch ID is used where available. |
+| Launch and multi-instance | Native Roblox launch, multiple clients, batches and shared sign-in protection are ported. Two test clients ran together, but simultaneous authenticated game joins still need user testing. |
+| Performance | CPU and memory monitoring, background priority, FPS and low graphics settings, and cooperative CPU caps are ported. CPU caps can cause stutter and are not kernel quotas. |
+| Windows and previews | Focus, minimize/restore, tiling, tiny windows and live previews are ported. Accessibility and Screen Recording permission are required. Preview rates are 2, 5 or 10 FPS. |
+| Anti-AFK | Opt-in focus mode sends Space to a visible tracked client after checking for recent human input. It requires Accessibility and Input Monitoring. Kick prevention in an actual game has not been verified. |
 
-On first launch, the Mac app requests missing Screen Recording, Input Monitoring, event-posting and Accessibility access. You must approve macOS prompts yourself and restart the app after granting access. If you decline, grant access later in System Settings → Privacy & Security.
+### Still missing or different from Windows
 
-**The feature catalogue below describes the original Windows version unless the table above or the [Mac notes](docs/MACOS_PORT.md) says it is available on macOS.**
+- Background or minimized anti-AFK, kernel CPU quotas, core affinity and spreading, memory trimming, bandwidth shaping, and reliable GPU counters.
+- Scheduled shutdown, Windows-style public-network classification, and automatic Roblox or RoALT installation and updates.
+- A notarized Mac installer, Intel or universal build, and a downloadable Mac GitHub release.
 
-<br>
+Unsupported controls are hidden or rejected on macOS. See [the port notes](docs/MACOS_PORT.md) for implementation details and the remaining acceptance checks. The [original Windows repository](https://github.com/inspectsoftware/RoALT) documents Windows-specific features.
 
-## 📑 Contents
+## Install on macOS
 
-| For everyone | For developers |
-|---|---|
-| [macOS port status](#macos-port-status) | [Architecture](#-architecture) |
-| [What is RoALT?](#-what-is-roalt) | [Mac port notes](docs/MACOS_PORT.md) |
-| [Features](#-features) | [Tech stack](#-tech-stack) |
-| [Install](#-install) | [Build from source](#-build-from-source) |
-| [Quick start](#-quick-start) | [Project layout](#-project-layout) |
-| [Safety and privacy](#-safety-and-privacy) | [Testing](#-testing) |
-| [FAQ](#-faq) | [Contributing](#-contributing) |
-| [Community](#-community) | [Cut a release](#-cut-a-release) |
+**Apple Silicon only.** There is not yet a Mac download on GitHub Releases. For now, build and install the app from this repository. You need [Xcode Command Line Tools](https://developer.apple.com/xcode/resources/), Node.js 22 or newer, and Rust 1.95 or newer. After installing those prerequisites, paste this into Terminal:
 
-<br>
+```sh
+git clone https://github.com/cookedkid/RoALT.git
+cd RoALT
+npm ci
+npm run tauri -- build --bundles app
+mkdir -p "$HOME/Applications"
+ditto src-tauri/target/release/bundle/macos/RoALT.app "$HOME/Applications/RoALT.app"
+open "$HOME/Applications/RoALT.app"
+```
 
-## 💡 What is RoALT?
+The build may take several minutes. The app is ad-hoc signed and not notarized. macOS may ask you to approve opening it and to allow access to an existing RoALT Keychain item after a rebuild. The app requests missing Screen Recording, Input Monitoring, event-posting and Accessibility permissions on first launch. Approve them in macOS, then restart RoALT. Anti-AFK remains off until you enable it.
 
-If you play Roblox on more than one account, you know the routine: sign out, sign in, find the game again,
-and only ever one client open at a time. RoALT removes all of that.
+A downloadable ZIP should be the normal install method once a Mac release is published; a Terminal build is the current option, not a requirement of the app itself. The [local build and validation notes](docs/MACOS_PORT.md#build-and-install) have more detail.
 
-- **Add each account once**, through Roblox's own sign-in page. RoALT keeps it signed in.
-- **See every account at a glance**: online status, Robux, friends, whether the sign-in still works.
-- **Paste any game link** and launch one account, or ten, into it. Even into the same server.
-- **Run several Roblox windows side by side**, and let RoALT bring back any that crash or get kicked.
+## Quick start
 
-It runs entirely on your PC. There is no RoALT account, no RoALT server and no tracking.
+1. Open RoALT and finish any macOS permission prompts you want to grant. Restart after granting them.
+2. Add an account through Roblox's sign-in page or import an encrypted `.roalt` backup.
+3. Select an account in **Play**, paste a game link and launch it.
+4. Enable **Multi-instance** in **Settings → Launching** before launching several clients. RoALT launches the installed Roblox player directly on Mac.
+5. Use **Home** for tiling and previews. Enable anti-AFK only if you want RoALT to send input to a running client.
 
-<table>
-<tr>
-<td width="50%"><img src="docs/images/accounts.png" alt="Accounts: every account with its status, groups and a details panel"><br><sub><b>Accounts:</b> status, groups and details at a glance</sub></td>
-<td width="50%"><img src="docs/images/play.png" alt="Play: pick who plays, then paste where to"><br><sub><b>Play:</b> who plays, where, then the big button</sub></td>
-</tr>
-<tr>
-<td><img src="docs/images/performance.png" alt="Performance: FPS cap, lowest graphics and graphics flags"><br><sub><b>Performance:</b> FPS cap, graphics flags, presets and profiles</sub></td>
-<td><img src="docs/images/settings.png" alt="Settings: theme, accent colour, background image and more"><br><sub><b>Settings:</b> dark or light, any accent, your own background</sub></td>
-</tr>
-</table>
-
-<br>
-
-## ✨ Features
-
-<table>
-<tr>
-<td width="50%" valign="top">
-
-### 🔐 Encrypted vault
-Cookies are encrypted with **Windows DPAPI**, or with your own **master password** (Argon2id + AES-256-GCM)
-with auto-lock and an optional **recovery code**. Reveal and copy sit behind **Windows Hello** or the master password.
-
-</td>
-<td width="50%" valign="top">
-
-### 👥 Accounts at a glance
-Avatars, live presence, Robux, Plus, friends, followers and 2-step status. Groups, aliases, notes,
-favourites, search and filters. Check sign-ins, one or all, in a click.
-
-</td>
-</tr>
-<tr>
-<td valign="top">
-
-### 🚀 Launch anything
-Paste a game link, place ID, job ID, private server or share link, a profile or `@username`:
-RoALT works out what it is. Join a friend, or save a target as a favourite.
-
-</td>
-<td valign="top">
-
-### 🪟 Multi-instance
-Run several clients side by side. Launch a batch one after another, all into **the same server**
-if you like, with live progress per account.
-
-</td>
-</tr>
-<tr>
-<td valign="top">
-
-### 🔁 Auto-rejoin and restart
-A disconnected client rejoins the same game on its own. Opt-in: crashed, frozen or memory-hungry
-clients restart too. A crash breaker gives up on an account after too many tries.
-
-</td>
-<td valign="top">
-
-### 🗺️ Server browser
-Browse public servers by players or ping, see your private servers, and send any accounts into
-the one you pick.
-
-</td>
-</tr>
-<tr>
-<td valign="top">
-
-### 📈 Monitor
-CPU, memory, disk/network and uptime per client, with sparklines and totals, refreshed every 2 seconds.
-
-</td>
-<td valign="top">
-
-### 🎚️ Performance tab
-FPS cap, lowest graphics and graphics flags (MSAA, textures, no grass, gray sky), with presets and
-shareable profiles. Cap one client's CPU, pin cores or trim memory. Adaptive mode limits every client
-that isn't in front.
-
-</td>
-</tr>
-<tr>
-<td valign="top">
-
-### 🔔 Discord alerts
-Crashes, disconnects, restarts and finished batches posted to **your own** webhook, kept encrypted
-in the vault. Opt-in.
-
-</td>
-<td valign="top">
-
-### ⬆️ Roblox updates
-Shows when Roblox is out of date and installs the update with Roblox's own installer, after checking
-it is signed by Roblox Corporation. Optional auto-update when no client runs.
-
-</td>
-</tr>
-<tr>
-<td valign="top">
-
-### 🖥️ Home
-Every running client as a live window thumbnail, with your PC's CPU, memory and GPU. Right-click one to
-focus, minimize, shrink it to a tiny window, limit it or close it. Tile all clients in one click. Anti-AFK
-has its own switch here.
-
-</td>
-<td valign="top">
-
-### 🛡️ Public networks
-Windows calls some networks **Public** (café, hotel, school Wi-Fi). Turn off **Allow public networks** in Settings,
-Security, and RoALT won't launch on them and a master-password vault locks there. It is on by default.
-
-</td>
-</tr>
-<tr>
-<td valign="top">
-
-### ↔️ Free resizing
-Drag a client's edges to any size, past the 800×600 minimum Roblox holds it to, and move small windows
-without them snapping back. Or start every client tiny.
-
-</td>
-<td valign="top">
-
-### 🎨 Soft Deck design
-A soft, very dark interface with a floating page, or a light theme. Pick any accent colour and your own
-background image, and skip the splash screen if you'd rather not wait.
-
-</td>
-</tr>
-</table>
+## FAQ
 
 <details>
-<summary><b>All features, in detail</b></summary>
+<summary><b>How do I download this Mac version?</b></summary>
 <br>
 
-| Area | What you get |
-|---|---|
-| 🔐 **Vault** | DPAPI by default (opens silently). Optional master password with auto-lock after idle, and an optional one-use recovery code for it. Encrypted `.roalt` backups you can export and import. Copied cookies are kept out of clipboard history and cleared after 30 s. |
-| 👥 **Accounts** | Add through Roblox's sign-in page (passkeys and security keys work), by pasting a cookie, by pasting many cookies at once, or by importing from Roblox Account Manager (an unlocked `AccountData.json`). Groups, alias, notes, colour, favourite, drag to reorder. Presence, Robux, Plus / Premium (legacy), friend and follower counts, join date, email and 2-step status. "Open on roblox.com" signed in as that account. |
-| 🚀 **Play** | Game links, place IDs, `roblox://` links, job IDs, private server links, `roblox.com/share` links (both formats), universes, profiles, `@username`. Join a friend or one of your other accounts. Favourites on the Play page and in the tray. `Ctrl+Enter` to launch. |
-| 🪟 **Batches** | Accounts launch strictly one after another with a stagger (default 6 s). **Same server**: *Pick a server* finds one with room for everyone first; *Follow the first* sends the rest to wherever the first account landed. Cancel at any time; one click re-picks the accounts that didn't launch. |
-| 🔁 **Recovery** | Auto-rejoin after kicks, shutdowns and lost connections (not after you leave on purpose). Opt-in auto-restart for crashes, frozen windows (30 s) and a memory limit. Crash breaker: default 3 relaunches in 10 minutes, with growing backoff. Per-account "Allow disconnect". Crash history with the log's reason. |
-| ↔️ **Free resizing** | Drag a client's edge to any size, past the minimum Roblox holds its window to, and move a small window by its title bar without it growing back. RoALT sizes the window itself (a mouse hook in RoALT's own process); nothing goes into the client. **Start clients tiny** opens every new client at a size you choose. |
-| 🖥️ **Home** | Live preview per client at 15, 30 or 60 FPS (your pick, while RoALT is on screen), with state, game, uptime, CPU and RAM. The **⋯** key, right-click, the menu key or `Shift+F10` for focus, minimize, restore, tiny window (any size, 320×240 by default) and back, CPU limit, efficiency mode, anti-AFK, close. **Tile** fits all clients in a grid on the screen; **Tile micro** lays out micro windows. Minimize all, Restore all. |
-| 🛑 **Stop all** | Hold one button in the sidebar, use the tray, or press a global **panic hotkey** you choose (off by default) to end every Roblox process and stop pending launches and rejoins. |
-| ⏲️ **Automation** | Minimize each new client on launch. Auto-shutdown timer: close the clients and shut the PC down at a set time (survives a RoALT restart, can be cancelled). Hourly Roblox log cleaner (logs older than a day or over 50 MB). Open logs button; RoALT's own logs rotate at 5 MB. |
-| ⚙️ **Launch control** | Custom launch arguments (default and per account, checked before use and never logged), a cooldown between launches, a configurable close grace (1–60 s). |
-| 🎚️ **Limits** | Per client: CPU cap, efficiency mode, core affinity, working-set trim (every N minutes or "Trim now"). Adaptive manager for background clients; your manual limits always win. **Memory throttle**: a client over a RAM limit gets a CPU cap, which lowers its frame rate, until it drops under 90 % of the limit. |
-| 🎞️ **FPS cap & graphics** | A default frame-rate cap (5–360), a per-account override and a per-launch one under Play's More options (a rejoin keeps it), plus the lowest graphics for every client (on by default). Set through Roblox's own Maximum Frame Rate and Graphics Quality just before each client starts; your own Roblox settings are put back once it has read them, and again when such a client closes (or when RoALT next starts, if it wasn't running then). Everything performance-related lives in its own **Performance** tab. |
-| 🪶 **Lighter rendering** | Clients RoALT starts get low geometry detail and the graphics flags below (on by default): less GPU time and memory per client. Written just before each client starts and put back once it has read them; skipped under a bootstrapper. |
-| 🎚️ **Graphics flags** | Pick MSAA, texture quality, rendering mode, gray sky, no grass and lowest render quality, from the FastFlags Roblox still allows. Roblox may ignore Vulkan and OpenGL. |
-| 👑 **Main account** | Mark an account **Full quality** and its clients keep your own Roblox graphics, without lowest graphics or lighter rendering. |
-| 🕘 **Recent servers** | Each account remembers the servers it reached (stored on this PC); rejoin a public one in a click. |
-| 🩺 **Diagnostics** | Copy or save a report for bug reports, from Debug: tickets, cookies, your Windows user name and IP addresses are removed. |
-| 📤 **Performance profiles** | Export your performance settings to a file or a share code, or import someone else's: you see what changes, then apply it. Only performance settings travel, never accounts, passwords, launch arguments or hotkeys. |
-| 📶 **Bandwidth** | One upload cap for all Roblox clients through a Windows QoS policy. Applied only when you click Apply (admin prompt); cleared when Windows restarts. |
-| 💤 **Anti-AFK** | Off by default, with a switch on Home. While you are away from the PC, every few minutes each client is briefly brought to the front and gets one Space press, so Roblox doesn't kick it after 20 idle minutes. Stops the moment you touch the mouse. Or **in the background**: a Tab press is posted to the window without bringing it to the front, even when minimized (Roblox may not count it in every game; auto-rejoin stays the fallback). Per-client opt-out. |
-| 🔔 **Discord** | Crash, disconnect, restart and batch alerts, plus an opt-in alert when a client gets into a game. Mute alerts per account. **Rich presence** (on by default, a switch in Settings): your profile shows "Playing RoALT", idling or with the game and how many alts run. |
-| 🔄 **RoALT updates** | Looks for a new RoALT on GitHub Releases at start and every 6 hours (can be turned off; *Check now* in Settings). A banner offers it; *Update now* downloads it, checks its release signature, installs it silently and restarts RoALT. Never installs on its own. |
-| 🧰 **Comfort** | Tray menu with favourites, close to tray, relaunch an ended client in one click, movable data folder, keyboard shortcuts. Dark, light or system theme, any accent colour, and your own background image, with a choice of how much the theme covers it. Optional skip of the splash screen. Your RoALT and Roblox versions at the top of Settings. |
-
-</details>
-
-<br>
-
-## 📥 Install
-
-### macOS (Apple Silicon port)
-
-There is no macOS GitHub release yet. Build the `.app` from this repository using the [macOS build instructions](docs/MACOS_PORT.md#build-and-install). The app is ad-hoc signed, so macOS may ask for Keychain approval after rebuilding. It is not notarized; Intel and universal builds have not been tested.
-
-### Windows (original upstream app)
-
-1. Download **`RoALT-Setup-<version>.exe`** from the [latest release](https://github.com/inspectsoftware/RoALT/releases/latest).
-2. Run it. No admin rights needed; it installs to `%LOCALAPPDATA%\Programs\RoALT`.
-3. Start RoALT from the Start menu or the desktop icon.
-
-| Requirement | |
-|---|---|
-| Windows | 10 (1809 or later) or 11, x64 |
-| WebView2 Runtime | Built into Windows 11. Setup offers to download it when missing. |
-| Roblox | Installed normally (RoALT can install or update it for you) |
-
-> [!NOTE]
-> The installer isn't code-signed yet, so Windows SmartScreen warns on first run. To be sure the file is genuine,
-> compare its SHA-256 with `SHA256SUMS.txt` on the release page, then choose **More info → Run anyway**.
->
-> ```powershell
-> Get-FileHash .\RoALT-Setup-0.7.0.exe -Algorithm SHA256
-> ```
-
-Your accounts and settings live in `%LOCALAPPDATA%\RoALT`. Uninstalling keeps them unless you tick
-**"also delete my data"**.
-
-<br>
-
-## 🏁 Quick start
-
-<details open>
-<summary><b>1. Add your first account</b></summary>
-<br>
-
-Press **Add account** (or `Ctrl+N`). A clean Roblox sign-in window opens: sign in as usual, including 2-step or
-passkeys. RoALT keeps the sign-in, closes the window and throws its browser profile away. You can also paste a
-`.ROBLOSECURITY` cookie; it is checked before it is saved.
+There is no Mac GitHub release asset yet. Use the [Terminal build-and-install commands](#install-on-macos) above. When a release ZIP is published, it will be the simpler download option. The Windows `.exe` on the original project's release page is not a Mac installer.
 
 </details>
 
 <details>
-<summary><b>2. (Optional) Set a master password</b></summary>
+<summary><b>Why does macOS ask for permissions?</b></summary>
 <br>
 
-By default the vault is locked to your Windows account, so it opens silently. For extra protection, set a master
-password in **Settings**. RoALT then asks for it on start and locks itself after you've been idle.
+Accessibility allows RoALT to arrange Roblox windows and focus them for opt-in anti-AFK. Screen Recording provides live window previews. Input Monitoring lets anti-AFK detect recent human activity; macOS also controls permission to post input. RoALT asks for missing access on first launch, but only you can grant it in **System Settings → Privacy & Security**. Restart RoALT after granting it. Features that need a declined permission will remain unavailable until you grant it.
 
 </details>
 
 <details>
-<summary><b>3. Launch a game</b></summary>
+<summary><b>Will it run on an Intel Mac?</b></summary>
 <br>
 
-Go to **Play** (`Ctrl+3`), pick an account, paste a game link and press the big **Play** key (`Ctrl+Enter`).
-Pick several accounts to launch a batch. Under **More options**, turn on **Same server** to put them all in one server.
+This build targets Apple Silicon. Intel and universal builds have not been tested or published.
 
 </details>
 
 <details>
-<summary><b>4. Run several clients at once</b></summary>
+<summary><b>Can I run several Roblox clients? What if one is already open?</b></summary>
 <br>
 
-**Multi-instance** is on by default (the switch is in **Settings → Launching**); start RoALT before Roblox. If Roblox is already open, RoALT says so and offers
-**Close Roblox** or **Take over**. Every client RoALT starts shows up on **Home**
-(`Ctrl+1`), with its state, server and uptime.
+Enable **Multi-instance** in RoALT and launch clients from RoALT. The Mac port uses the installed Roblox player and a macOS-specific singleton mechanism; it does not use the Windows **Close Roblox** or **Take over** handle workflow. Two test clients ran alongside an existing client, but simultaneous authenticated game joins still need acceptance testing.
 
 </details>
 
 <details>
-<summary><b>5. Let it look after your clients</b></summary>
+<summary><b>Does anti-AFK guarantee I will not be kicked?</b></summary>
 <br>
 
-In **Settings → Launching**, turn on **Auto-rejoin** (and, if you like, **Auto-restart**). Open **Monitor**
-(`Ctrl+6`) to see what each client uses, and **Discord** (`Ctrl+7`) to get alerts on your phone.
+No. The Mac implementation sends a Space press to a visible client when you have been away, but individual Roblox games may not count synthetic input. Keep auto-rejoin as a fallback. Background or minimized anti-AFK is not available on Mac.
 
 </details>
 
 <details>
-<summary><b>⌨️ Keyboard shortcuts</b></summary>
+<summary><b>Can I use Bloxstrap?</b></summary>
 <br>
 
-| Keys | Action |
-|---|---|
-| `Ctrl+1` … `Ctrl+9` | Home, Accounts, Play, Servers, Settings, Monitor, Discord, Debug, Performance |
-| `Ctrl+N` | Add account |
-| `Ctrl+F` | Search accounts |
-| `Ctrl+Enter` | Play |
-| `F5` | Refresh |
+Bloxstrap is a Windows bootstrapper. The Mac port launches the installed macOS Roblox player directly.
 
 </details>
-
-<br>
-
-## 🔒 Safety and privacy
-
-<table>
-<tr>
-<td width="50%" valign="top">
-
-#### ✅ What RoALT does
-
-- Talks **only** to `*.roblox.com` and `*.rbxcdn.com`, plus GitHub to look for RoALT updates (can be turned off), and your Discord webhook.
-- Encrypts every cookie with **AES-256-GCM** under a key protected by **Windows DPAPI**, plus your master password if you set one.
-- Encrypts the **whole database** too (SQLCipher, AES-256), with its own DPAPI-protected key: a copied `roalt.db` can't be read on another PC or Windows account.
-- Signs you in through **Roblox's own page**, in a throw-away browser profile.
-- Installs Roblox updates **only** when the installer is signed by Roblox Corporation.
-- Updates itself **only** when you click Update now, and only with an installer that carries RoALT's release signature.
-- Redacts launch tickets from anything it reads in Roblox's logs.
-
-</td>
-<td width="50%" valign="top">
-
-#### 🚫 What RoALT never does
-
-- **Never** reads or writes the Roblox client's memory or files, with two exceptions for the clients it starts: Roblox's own settings file (`GlobalBasicSettings_13.xml`, only the frame-rate cap and graphics quality) and the allowlisted rendering flags in the version folder's `ClientSettings\ClientAppSettings.json`. Both are put back as they were once the client has read them.
-- **Never** sends telemetry. There is no RoALT server and no RoALT account.
-- **Never** writes cookies, tickets or launch arguments to its logs.
-- **Never** changes Windows settings, except the opt-in bandwidth limit.
-- **Never** contacts Discord's servers unless you paste a webhook. Rich presence goes only to the Discord app on your PC.
-
-</td>
-</tr>
-</table>
 
 <details>
-<summary><b>The details</b></summary>
+<summary><b>What if an account says its cookie expired?</b></summary>
 <br>
 
-- **Discord rich presence (on by default).** RoALT tells the Discord app on this PC, over its local pipe, the game's
-  name and how many clients run. Discord shows that on your profile. Turn it off under **Settings → Show on Discord**.
-- **Discord alerts (opt-in).** If you paste a webhook in the Discord tab, alerts go to that webhook on `discord.com`. The URL is
-  kept encrypted in the vault, and messages name accounts by display name and username only, with mentions disabled.
-  Nothing is sent while the vault is locked.
-- **Roblox updates** come from Roblox only: the version from `clientsettingscdn.roblox.com`, the installer from
-  `setup.rbxcdn.com`, run only when its signature checks out as Roblox Corporation's.
-- **RoALT updates** are looked up on GitHub (`api.github.com`, this repository's latest published release) as soon
-  as RoALT starts and every 6 hours, unless you turn *Check for RoALT updates* off in Settings. The request carries only
-  `RoALT/<version>` as its user agent. When you click Update now, the installer and its `.sig` are downloaded from
-  `github.com` (GitHub's own download hosts only), and the installer runs only if its ECDSA P-256 signature checks out
-  against the public key built into RoALT. The signature covers the version too, so the release must be newer than
-  the RoALT you run and the installer must be the one signed for that version. It installs silently, and RoALT starts again.
-  Roblox clients keep running through it, and the restarted RoALT follows them again (also after you close and reopen
-  RoALT). Their limits are lifted while RoALT is closed and set again when it starts.
-- **Multi-instance** works by creating one named Windows object before Roblox starts. RoALT also holds Roblox's shared
-  sign-in files while its clients run, so clients can't sign each other out.
-- **Limits** go through Windows itself (job objects, priority, affinity). RoALT only ever opens a client with the
-  narrow rights a change needs, never to read its memory.
-- **Take over (on request)** closes the one "Roblox is already running" lock inside an open Roblox, so RoALT's clients
-  can run next to it. It needs to copy that one handle (`PROCESS_DUP_HANDLE`) and never reads or writes the client's memory.
-- **Anti-AFK (opt-in)** briefly brings a client to the front and presses Space the way a keyboard does, or, in background
-  mode, posts a Tab press to its window.
-- **Window tools** (thumbnails, minimize, micro, tile) use ordinary Windows window calls (`PrintWindow`, `ShowWindow`,
-  `SetWindowPos`).
-- **Free resizing** uses a low-level mouse hook in RoALT's own process. It sees where the mouse is across the PC, stores
-  nothing and sends nothing, and only acts on a press on the edge or title bar of a client RoALT started.
-- **Bandwidth limit (opt-in)** adds a Windows QoS policy named `RoALT-Roblox` through an admin prompt, only when you click
-  Apply. Windows drops it on restart. It is the only change RoALT makes to Windows.
+Roblox ended the sign-in or requires a human check. Open the account on roblox.com from RoALT and complete the check, or remove and add the account again.
 
 </details>
 
-> [!IMPORTANT]
-> Your `.ROBLOSECURITY` cookie is the key to your account. RoALT keeps it encrypted, but never share a cookie,
-> a `.roalt` backup or its password with anyone, including people who say they are helping you.
-
+<details>
+<summary><b>What if I forget my master password?</b></summary>
 <br>
 
-## ❓ FAQ
+If you created a recovery code, use **Forgot password?** on the unlock screen. A recovery code works once and is tied to the same Mac Keychain item; keep it somewhere separate from this Mac. For moving to another computer, use a password-protected `.roalt` backup. Without the password, a working recovery code or a backup, the encrypted vault cannot be recovered. Do not delete RoALT's data or Keychain item while trying to recover it.
+
+</details>
+
+<details>
+<summary><b>Where is my data? Can I move from Windows?</b></summary>
+<br>
+
+Mac data is in `~/Library/Application Support/RoALT`; **Settings → Data** can open or move it. Import a password-protected `.roalt` backup to move accounts from Windows. A Windows DPAPI database cannot be copied directly to Mac.
+
+</details>
 
 <details>
 <summary><b>Is RoALT safe to use with my account?</b></summary>
 <br>
 
-RoALT signs in the same way the Roblox website does and never touches the Roblox client. Roblox has said that
-multi-instance methods which don't modify the client are not affected by its modified-client enforcement, but it
-doesn't officially support running several clients at once. Use RoALT only with accounts you own.
+RoALT uses Roblox's own sign-in and the installed, unchanged Roblox player. Roblox does not officially support running several clients at once, and its behavior can change. Use RoALT only with accounts you own. Never share a `.ROBLOSECURITY` cookie, a `.roalt` backup or its password.
 
 </details>
 
-<details>
-<summary><b>Why does Windows warn me when I run the installer?</b></summary>
-<br>
+## For developers
 
-The installer isn't code-signed yet, so SmartScreen doesn't recognise it. Check the SHA-256 against
-`SHA256SUMS.txt` on the release, then choose **More info → Run anyway**.
+RoALT uses Tauri 2, a Rust backend, React and TypeScript. The Mac backend uses Keychain, Cocoa/Accessibility, ScreenCaptureKit and macOS process APIs. Read [the Mac port notes](docs/MACOS_PORT.md) for behavior and test results. To check source changes:
 
-</details>
-
-<details>
-<summary><b>Multi-instance says Roblox is already running.</b></summary>
-<br>
-
-Roblox's tray app or an open client already holds the lock RoALT needs. Click **Close Roblox** when RoALT offers it, then
-launch from RoALT. To keep that client open, click **Take over** instead.
-
-</details>
-
-<details>
-<summary><b>An account shows "Cookie expired" or needs verification.</b></summary>
-<br>
-
-Roblox ended that sign-in, or wants a human check. Open the account on roblox.com from its menu and complete the
-check, or remove it and add it again.
-
-</details>
-
-<details>
-<summary><b>I forgot my master password.</b></summary>
-<br>
-
-If you made a **recovery code**, press **Forgot password?** on the unlock screen, enter the code and choose a new
-password. The code works once and you get a new one. It's optional: make one when you set the password, or later in
-**Settings**.
-
-- A code file on the same PC opens the vault for anyone who finds it, so keep it on a USB stick, a phone or paper.
-- It works only for the same Windows user on the same PC. After a Windows reinstall or on a new PC it won't help; a
-  `.roalt` backup does.
-
-Without a code the password can't be recovered: that is what makes it safe. Remove the data folder
-(`%LOCALAPPDATA%\RoALT`) and add your accounts again, or import a `.roalt` backup whose password you know.
-
-</details>
-
-<details>
-<summary><b>Does it work with Bloxstrap?</b></summary>
-<br>
-
-Yes. RoALT launches through the registered bootstrapper and follows its clients. It won't install Roblox updates over a
-bootstrapper, since the bootstrapper keeps Roblox up to date itself. RoALT's graphics flags are skipped there, because a
-bootstrapper writes its own.
-
-</details>
-
-<details>
-<summary><b>Where is my data? Can I move it?</b></summary>
-<br>
-
-In `%LOCALAPPDATA%\RoALT`. **Settings → Data** opens it or moves it to another folder or drive.
-
-</details>
-
-<br>
-
-## 💬 Community
-
-Questions, ideas or bug reports? Join the **[Discord server](https://discord.gg/qcj68tHKCX)** or
-[open an issue](https://github.com/inspectsoftware/RoALT/issues).
-
-<br>
-
----
-
-<div align="center">
-
-# 🔧 For developers
-
-</div>
-
-## 🧭 Architecture
-
-RoALT is a [Tauri 2](https://tauri.app) app: a Rust backend that owns every secret, process and network call, and a
-React UI that talks to it over typed IPC. The UI never sees a cookie unless you reveal one.
-
-```mermaid
-flowchart LR
-    UI["React UI<br/>src/features/*"] -- "invoke / events<br/>(src/api.ts, ts-rs types)" --> CMD["commands.rs"]
-    CMD --> VAULT["vault<br/>DPAPI · Argon2id · AES-GCM"]
-    CMD --> API["roblox_api<br/>CSRF · rate limits · cookie rotation"]
-    CMD --> LAUNCH["launcher<br/>target · uri · bulk · update"]
-    CMD --> INST["instances<br/>tracker · limits · rejoin · metrics"]
-    CMD --> DISC["discord<br/>webhook alerts"]
-    VAULT --> DB[("SQLite<br/>roalt.db")]
-    LAUNCH --> API
-    LAUNCH --> RBX["RobloxPlayerBeta.exe"]
-    INST -- "PID + log file" --> RBX
-    INST --> DISC
-    API --> NET(("*.roblox.com"))
-```
-
-| Module | Role |
-|---|---|
-| [`vault/`](src-tauri/src/vault) | Envelope encryption: one random data key encrypts every secret (AES-256-GCM, row-bound AAD). The key is wrapped with DPAPI, or with an Argon2id key from the master password and then DPAPI. Windows Hello re-auth, `.roalt` backups. |
-| [`roblox_api/`](src-tauri/src/roblox_api) | The one typed Roblox client. Every URL in `endpoints.rs`. CSRF from the real request's 403, per-route queues driven by `x-ratelimit-*`, rotated `.ROBLOSECURITY` saved atomically, three error-body shapes parsed. |
-| [`launcher/`](src-tauri/src/launcher) | `target.rs` parses any pasted link locally; `uri.rs` builds the `roblox-player:` URI exactly like the website; `bulk.rs` runs batches and same-server; `client_settings.rs` the FPS cap and lowest graphics; `flags.rs` the rendering flags; `update.rs` + `authenticode.rs` install Roblox updates after `WinVerifyTrust`. |
-| [`instances/`](src-tauri/src/instances) | `tracker.rs` ties each client to its account by PID, start time and log file; `logwatch.rs` reads job IDs and disconnects; `rejoin.rs` and the crash breaker; `limits.rs` CPU caps, affinity, efficiency mode, trims; `metrics.rs`; `multi.rs` the singleton lock and take-over; `window.rs` thumbnails, micro and tile; `resize.rs` free resizing; `qos.rs`; `afk.rs`. |
-| [`discord.rs`](src-tauri/src/discord.rs) | Webhook alerts: host-checked URL, events coalesced every 2 s, `retry_after` honoured. |
-| [`webview.rs`](src-tauri/src/webview.rs) | Sign-in and session windows on temporary WebView2 profiles, deleted after use. |
-| [`storage/`](src-tauri/src/storage) | SQLite through `rusqlite` with numbered migrations. Running clients live in memory only. |
-
-<details>
-<summary><b>How a launch works</b></summary>
-<br>
-
-1. Validate the account, then resolve a share link or universe with **that account's** cookie.
-2. `GET auth.roblox.com/v1/client-assertion/`, then POST `authentication-ticket` with it, as the website does.
-3. Build the `roblox-player:` URI with a fresh `browsertrackerid`, then start the client from the path in
-   `HKCU\Software\ROBLOX Corporation\Environments\roblox-player`.
-4. Record the PID and creation time and close the process handle at once.
-5. Bind the client's `_Player_` log by that tracker ID, then read its job ID, user ID and disconnects. If Roblox
-   relaunches itself during an update, the tracker re-binds through the log's `userid:`.
-
-</details>
-
-<details>
-<summary><b>Process-handle rules</b></summary>
-<br>
-
-Every sample or change opens a short-lived handle checked against the client's start time, with only the right it
-needs: `PROCESS_QUERY_LIMITED_INFORMATION` for metrics, `PROCESS_SET_QUOTA` for trims, `PROCESS_SET_INFORMATION` for
-affinity and efficiency mode. Never `PROCESS_VM_READ`; `PROCESS_DUP_HANDLE` only for a take-over you start. Only the
-CPU-cap job handle is kept.
-
-</details>
-
-The full design, with every Roblox behaviour verified and its source, is in [docs/DESIGN.md](docs/DESIGN.md).
-What each milestone added and how to test it is in [docs/MILESTONES.md](docs/MILESTONES.md).
-
-<br>
-
-## 🧱 Tech stack
-
-| Layer | Tools |
-|---|---|
-| Shell | Tauri 2.12, WebView2 |
-| Backend | Rust (edition 2024), tokio, reqwest (rustls), rusqlite + rusqlite_migration, `windows` 0.62 |
-| Crypto | aes-gcm, argon2, zeroize, Windows DPAPI and Windows Hello |
-| Frontend | React 19, TypeScript, Vite, Tailwind CSS 4, TanStack Query 5 |
-| IPC types | [ts-rs](https://github.com/Aleph-Alpha/ts-rs): Rust types exported to `src/bindings/` |
-| Installer | Inno Setup 6.6, GitHub Actions (CI and tagged draft releases) |
-
-<br>
-
-## 🔨 Build from source
-
-**Needs:** Node.js 24, Rust (stable, with the Visual Studio Build Tools' C++ workload) and, for the installer,
-[Inno Setup 6.6 or newer](https://jrsoftware.org/isdl.php).
-
-```powershell
-git clone https://github.com/inspectsoftware/RoALT.git
-cd RoALT
+```sh
 npm ci
-npm run tauri dev        # run the app with hot reload
+npm run build
+cargo test --manifest-path src-tauri/Cargo.toml --locked
 ```
 
-| Command | What it does |
-|---|---|
-| `npm run tauri dev` | Runs the full app. |
-| `npm run dev` | Runs the UI alone in a browser, against a built-in mock of the backend (`src/dev/mockIpc.ts`). |
-| `npm run build` | Type-checks and builds the UI into `dist/`. |
-| `npm run bindings` | Regenerates the TypeScript types in `src/bindings/` from the Rust types. Run it after changing a `#[ts(export)]` type. |
-| `powershell -ExecutionPolicy Bypass -File scripts\build-installer.ps1` | Release build plus installer: `dist-installer\RoALT-Setup-<version>.exe` and its SHA-256. |
-| `…\build-installer.ps1 -Dev` | Also keeps `installers\RoALT-Setup-<version>-dev-<stamp>.exe`, one per change. |
-
-> [!TIP]
-> Set `ROALT_DATA_DIR` to a scratch folder to run a build without touching your real accounts.
-
-<br>
-
-## 📁 Project layout
-
-```text
-├─ src/                    React UI
-│  ├─ App.tsx              window shell, navigation, shortcuts
-│  ├─ api.ts               one typed wrapper per backend command
-│  ├─ bindings/            ts-rs generated types (committed)
-│  ├─ dev/mockIpc.ts       mock backend for `npm run dev`
-│  ├─ ui/                  shared components
-│  └─ features/            dashboard · accounts · launch · servers · performance · monitor · discord · debug · settings · splash · vault
-├─ src-tauri/              Rust backend
-│  ├─ src/
-│  │  ├─ main.rs           builder, plugins, managed state
-│  │  ├─ commands.rs       IPC layer
-│  │  ├─ model.rs          shared types (exported to TS)
-│  │  ├─ vault/  roblox_api/  launcher/  instances/  storage/
-│  │  ├─ discord.rs  webview.rs  tray.rs  error.rs
-│  ├─ tests/fixtures/      recorded Roblox responses (no real cookies)
-│  └─ tauri.conf.json
-├─ installer/RoALT.iss     Inno Setup script
-├─ scripts/                build-installer.ps1
-├─ docs/                   DESIGN.md · MILESTONES.md · research/
-└─ .github/workflows/      ci.yml · release.yml
-```
-
-<br>
-
-## 🧪 Testing
-
-```powershell
-npm run typecheck                              # TypeScript
-cd src-tauri
-cargo test --locked                            # Rust unit tests
-cargo clippy --all-targets --locked -- -D warnings
-```
-
-The Rust tests cover link parsing, URI building (byte-for-byte against the website's output), vault and backup
-round-trips, and response parsing from recorded fixtures. They never use real cookies. CI runs all of the above on
-`windows-latest` for every push and pull request.
-
-<br>
-
-## 🤝 Contributing
-
-Bug reports, ideas and pull requests are welcome.
-
-1. Open an [issue](https://github.com/inspectsoftware/RoALT/issues) or ask on [Discord](https://discord.gg/qcj68tHKCX) first for anything big.
-2. Keep changes small and focused, and match the surrounding code.
-3. Run the [tests](#-testing) and `npm run bindings` if you changed a shared type.
-4. Never commit a real cookie, ticket or webhook, including in fixtures or screenshots.
-
-<br>
-
-## 📦 Cut a release
-
-<details>
-<summary><b>Steps</b></summary>
-<br>
-
-1. Set the same version in `src-tauri/tauri.conf.json`, `package.json` and `src-tauri/Cargo.toml`,
-   then run `cargo update -p roalt --offline` in `src-tauri` so `Cargo.lock` matches (CI builds `--locked`).
-2. Commit all four files, then tag and push the tag: `git tag vX.Y.Z && git push origin vX.Y.Z`.
-3. The Release workflow builds the installer and puts it with `SHA256SUMS.txt` on a draft release.
-   Check it, then publish the draft.
-
-</details>
-
-<br>
-
-## 📜 Disclaimer
-
-RoALT is an independent project, not affiliated with or endorsed by Roblox Corporation. Use it only
-with accounts you own. Roblox doesn't officially support running several clients at once and may
-change how its client behaves at any time.
-
-<div align="center">
-<br>
-<sub>Made for people with too many alts. &nbsp;·&nbsp; <a href="https://discord.gg/qcj68tHKCX">Discord</a> &nbsp;·&nbsp; <a href="https://github.com/inspectsoftware/RoALT/releases/latest">Download</a></sub>
-</div>
+The app is independent and is not affiliated with or endorsed by Roblox Corporation. Bug reports and contributions can go to [this fork's issues](https://github.com/cookedkid/RoALT/issues). Windows development and its installer remain in the [upstream repository](https://github.com/inspectsoftware/RoALT).
