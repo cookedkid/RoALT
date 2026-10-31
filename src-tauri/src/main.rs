@@ -486,6 +486,8 @@ fn init(app: &TauriApp, data_dir: &Path, moved_from: Option<&Path>) -> std::resu
 
 #[cfg(target_os = "macos")]
 fn request_initial_permissions(data_dir: &Path) {
+    // A prior build's first-run marker does not imply this build has an AX grant.
+    unsafe { ro_request_accessibility() };
     let marker = data_dir.join("permissions-requested-v1");
     let first_run = std::fs::OpenOptions::new().write(true).create_new(true).open(&marker);
     if first_run.is_ok() {
@@ -498,6 +500,7 @@ fn request_initial_permissions(data_dir: &Path) {
 #[cfg(target_os = "macos")]
 unsafe extern "C" {
     fn ro_request_initial_permissions();
+    fn ro_request_accessibility();
 }
 
 /// Windows drops the bandwidth policy when it restarts; RoALT never sets it again on its own

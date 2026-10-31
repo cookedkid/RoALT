@@ -976,6 +976,8 @@ impl Default for Tracker {
 
 /// The process queries a poll makes (a fixed list in tests).
 trait Procs {
+    #[cfg(target_os = "macos")]
+    fn open_log(&self, _pid: u32, _start: u64, _dir: &Path) -> Option<PathBuf> { None }
     fn start_time(&self, pid: u32) -> Option<u64>;
     fn roblox(&self) -> Vec<ProcInfo>;
     fn hung(&self, pid: u32) -> bool;
@@ -984,6 +986,8 @@ trait Procs {
 struct Live;
 
 impl Procs for Live {
+    #[cfg(target_os = "macos")]
+    fn open_log(&self, pid: u32, start: u64, dir: &Path) -> Option<PathBuf> { process::open_log(pid, start, dir) }
     fn start_time(&self, pid: u32) -> Option<u64> {
         process::start_time(pid)
     }
@@ -1036,6 +1040,10 @@ fn observe(e: &mut Entry, dir: Option<&Path>, procs: &dyn Procs, roblox: &mut Op
             e.offset = 0;
             e.facts = LogFacts::default();
         }
+    }
+    #[cfg(target_os = "macos")]
+    if e.log.is_none() && e.alive && e.adopted {
+        e.log = procs.open_log(e.inst.pid, first, dir);
     }
     if e.log.is_none() {
         e.log = logwatch::find_log(dir, e.btid, launched);
@@ -1541,6 +1549,31 @@ mod tests {
         assert_eq!(state(&t, &id), (InGame, None, 200));
         assert_eq!(state(&t, &other), (Starting, None, 300));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mac_pid_bound_log_reaches_in_game_without_browser_tracker_id() {
+        struct Bound { proc: Fake, path: PathBuf }
+        impl Procs for Bound {
+            fn start_time(&self, pid: u32) -> Option<u64> { self.proc.start_time(pid) }
+            fn roblox(&self) -> Vec<ProcInfo> { self.proc.roblox() }
+            fn hung(&self, _: u32) -> bool { false }
+            fn open_log(&self, pid: u32, start: u64, _: &Path) -> Option<PathBuf> {
+                (pid == 100 && self.start_time(pid) == Some(start)).then(|| self.path.clone())
+            }
+        }
+        let dir = temp_dir();
+        let path = dir.join("mac_Player_without_btid.log");
+        append(&path, &join_lines(USER));
+        append(&path, &[replicator()]);
+        let start = now_ms();
+        let procs = Bound { proc: Fake::new(&[(100, (start / 1000) as u64)]), path };
+        let t = Tracker::new();
+        let id = t.register(&info(100, start, false), target()).id;
+        t.poll(Some(&dir), &procs, &user_of, start + 1_000);
+        assert_eq!(state(&t, &id), (InGame, None, 100));
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

@@ -62,3 +62,9 @@ Grant permissions yourself in **System Settings → Privacy & Security**, then r
 Frontend production build and the Mac Rust test suite pass (291 passed, 2 ignored). New tests cover key validation, fallback decisions, App Nap preference restoration and journal serialization. Installer shell syntax and mocked prerequisite failures were checked. Windows has not been built on this Mac.
 
 Manual acceptance remains required: test background and minimized Roblox clients beyond 20 minutes; verify Tab/Space are counted by the game; confirm no focus changes or input during human activity; confirm permission denial; test App Nap before/after relaunch in Activity Monitor; compare efficiency-only scheduling with cooperative caps; check GPU display on a real Apple Silicon Mac. No successful event post is reported as proof of idle prevention.
+
+## 0.7.2 join tracking and Accessibility fixes
+
+Mac clients that omit the browser tracker ID now bind to their own open player log through libproc, checking the PID creation time and user identity before and after enumeration. Ambiguous logs are rejected. This lets real join/replicator events advance the existing progress bar without treating a running process as proof of a successful join. Windows log binding is unchanged.
+
+Accessibility is checked and requested again at startup if the current build is untrusted, even when an older build wrote the first-run permission marker. Native prompts are dispatched on the main thread. Window-control errors explain how to repair a stale grant: quit RoALT, remove the old entry in System Settings → Privacy & Security → Accessibility, add the current installed RoALT.app, enable it, then reopen RoALT. The app cannot grant itself permission; ad-hoc signatures change between builds.

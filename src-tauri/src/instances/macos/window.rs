@@ -33,7 +33,7 @@ unsafe extern "C" {
     fn ro_capture_free(bytes: *mut u8);
 }
 fn error(code: i32) -> AppError {
-    AppError::Invalid(match code{-2=>"Enable RoALT in System Settings → Privacy & Security → Accessibility to resize Roblox windows.",-3=>"Enable RoALT in System Settings → Privacy & Security → Screen Recording, then restart RoALT to show previews.",_=>"macOS could not access this Roblox window."}.into())
+    AppError::Invalid(match code{-2=>"Enable RoALT in System Settings → Privacy & Security → Accessibility, then restart RoALT. If already enabled after an update, remove the old RoALT entry and add the current RoALT.app again.",-3=>"Enable RoALT in System Settings → Privacy & Security → Screen Recording, then restart RoALT to show previews.",_=>"macOS could not access this Roblox window."}.into())
 }
 pub fn thumbnail(pid: u32, start: u64, maxwidth: u32) -> Result<Option<(Thumb, bool)>> {
     let (mut bytes, mut w, mut h) = (std::ptr::null_mut(), 0, 0);
@@ -83,7 +83,7 @@ fn action(pid: u32, what: i32, size: Option<(u32, u32)>) -> Result<()> {
     }
     let (w, h) = size.unwrap_or((0, 0));
     match unsafe{super::native::ro_window(pid as i32,what,80,80,w as i32,h as i32)} {
-  0=>Ok(()),-2=>Err(AppError::Invalid("Enable RoALT in System Settings → Privacy & Security → Accessibility to control Roblox windows.".into())),
+  0=>Ok(()),-2=>Err(AppError::Invalid("Enable RoALT in System Settings → Privacy & Security → Accessibility, then restart RoALT. If already enabled after an update, remove the old RoALT entry and add the current RoALT.app again.".into())),
   _=>Err(AppError::Invalid("macOS could not control this Roblox window.".into()))
  }
 }

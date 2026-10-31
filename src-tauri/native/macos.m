@@ -144,3 +144,29 @@ double ro_gpu_pct(void) {
         return utilization;
     }
 }
+
+// Exact PID-owned log binding: Mac Roblox may omit the browser tracker ID.
+int ro_open_log(int pid, uint64_t start, const char *directory, char *out, int capacity) {
+ struct proc_bsdinfo b={0};
+ if(proc_pidinfo(pid,PROC_PIDTBSDINFO,0,&b,sizeof(b))!=sizeof(b)||b.pbi_uid!=getuid()||b.pbi_start_tvsec!=start)return 0;
+ int bytes=proc_pidinfo(pid,PROC_PIDLISTFDS,0,NULL,0);
+ if(bytes<=0||bytes>1024*1024)return 0;
+ struct proc_fdinfo *fds=calloc(1,bytes);
+ if(!fds)return 0;
+ int count=proc_pidinfo(pid,PROC_PIDLISTFDS,0,fds,bytes)/(int)sizeof(*fds),found=0;
+ for(int i=0;i<count;i++) {
+  if(fds[i].proc_fdtype!=PROX_FDTYPE_VNODE)continue;
+  struct vnode_fdinfowithpath info={0};
+  if(proc_pidfdinfo(pid,fds[i].proc_fd,PROC_PIDFDVNODEPATHINFO,&info,sizeof(info))!=sizeof(info))continue;
+  const char *path=info.pvip.vip_path;size_t n=strlen(directory);
+  if(strncmp(path,directory,n)||path[n]!='/')continue;
+  const char *name=path+n+1;size_t len=strlen(name);
+  if(strchr(name,'/')||!strstr(name,"_Player_")||strstr(name,"_CrashHandler_")||len<4||strcmp(name+len-4,".log"))continue;
+  if(found && strcmp(out,path)){found=0;break;}
+  if(strlen(path)>=(size_t)capacity){found=0;break;}
+  strlcpy(out,path,capacity);found=1;
+ }
+ free(fds);
+ if(proc_pidinfo(pid,PROC_PIDTBSDINFO,0,&b,sizeof(b))!=sizeof(b)||b.pbi_start_tvsec!=start||b.pbi_uid!=getuid())return 0;
+ return found;
+}

@@ -4,17 +4,24 @@
 #include <stdatomic.h>
 #include <time.h>
 #include <pthread.h>
-// macOS presents its own approval dialogs. Request each permission only on first run.
+// Retry Accessibility at startup when the current signed build is not trusted.
+// TCC grants belong to code identity; an older build's enabled entry can be stale.
+void ro_request_accessibility(void) {
+    if (AXIsProcessTrusted()) return;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        dispatch_async(dispatch_get_main_queue(), ^{
+            NSDictionary *options = @{(__bridge id)kAXTrustedCheckOptionPrompt: @YES};
+            AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)options);
+        });
+    });
+}
 void ro_request_initial_permissions(void) {
     @autoreleasepool {
         if (!CGPreflightScreenCaptureAccess()) CGRequestScreenCaptureAccess();
         if (!CGPreflightListenEventAccess()) CGRequestListenEventAccess();
         if (!CGPreflightPostEventAccess()) CGRequestPostEventAccess();
-        // Accessibility opens System Settings asynchronously, so ask for it last.
-        if (!AXIsProcessTrusted()) {
-            NSDictionary *options = @{(__bridge id)kAXTrustedCheckOptionPrompt: @YES};
-            AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)options);
-        }
+        ro_request_accessibility();
     }
 }
 static _Atomic uint64_t last_input=0;

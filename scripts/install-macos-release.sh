@@ -17,7 +17,7 @@ main() {
   [[ "$(uname -m)" == arm64 ]] || fail 'This preview requires Apple Silicon. Run Terminal natively, not through Rosetta.'
   if pgrep -x roalt >/dev/null; then fail 'Quit RoALT before installing an update.'; fi
   local tag archive base expected actual bundle destination identifier architecture
-  tag=macos-preview-0.7.1-2
+  tag=macos-preview-0.7.2-3
   archive=RoALT-macOS-Apple-Silicon.zip
   base="https://github.com/cookedkid/RoALT/releases/download/$tag"
   destination="$HOME/Applications/RoALT.app"
@@ -42,7 +42,7 @@ main() {
   [[ -d "$bundle" && ! -L "$bundle" && -x "$bundle/Contents/MacOS/roalt" && ! -L "$bundle/Contents/MacOS/roalt" ]] || fail 'The download does not contain the expected app.'
   identifier="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$bundle/Contents/Info.plist")"
   [[ "$identifier" == com.inspectsoftware.roalt ]] || fail 'The app bundle identifier did not match.'
-  [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$bundle/Contents/Info.plist")" == 0.7.1 ]] || fail 'The app version did not match this installer.'
+  [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$bundle/Contents/Info.plist")" == 0.7.2 ]] || fail 'The app version did not match this installer.'
   architecture="$(file -b "$bundle/Contents/MacOS/roalt")"
   case "$architecture" in
     *'Mach-O 64-bit executable arm64'*) ;;

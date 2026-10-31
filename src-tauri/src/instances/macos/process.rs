@@ -86,3 +86,41 @@ mod tests {
         assert_eq!(start_time(u32::MAX), None);
     }
 }
+
+/// Only a player log actually open by this verified process, never a timestamp guess.
+pub fn open_log(pid: u32, start: u64, dir: &std::path::Path) -> Option<std::path::PathBuf> {
+    use std::os::unix::ffi::{OsStrExt, OsStringExt};
+    unsafe extern "C" {
+        fn ro_open_log(pid: i32, start: u64, directory: *const std::ffi::c_char, out: *mut std::ffi::c_char, capacity: i32) -> i32;
+    }
+    let dir = dir.canonicalize().ok()?;
+    let directory = std::ffi::CString::new(dir.as_os_str().as_bytes()).ok()?;
+    let mut out = [0u8; 4096];
+    if unsafe { ro_open_log(pid as i32, start, directory.as_ptr(), out.as_mut_ptr().cast(), out.len() as i32) } != 1 { return None; }
+    let end = out.iter().position(|&b| b == 0)?;
+    Some(std::ffi::OsString::from_vec(out[..end].to_vec()).into())
+}
+
+#[cfg(test)]
+mod log_tests {
+    use super::*;
+    #[test]
+    fn binds_only_the_verified_process_player_log() {
+        let dir = std::env::temp_dir().join(format!("roalt-pid-log-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let dir = dir.canonicalize().unwrap();
+        let path = dir.join("sample_Player_one_last.log");
+        let file = std::fs::File::create(&path).unwrap();
+        let pid = std::process::id();
+        let start = start_time(pid).unwrap();
+        assert_eq!(open_log(pid, start, &dir), Some(path.clone()));
+        assert_eq!(open_log(pid, start + 1, &dir), None);
+        let crash = std::fs::File::create(dir.join("sample_Player_CrashHandler_last.log")).unwrap();
+        assert_eq!(open_log(pid, start, &dir), Some(path));
+        let other = std::fs::File::create(dir.join("sample_Player_two_last.log")).unwrap();
+        assert_eq!(open_log(pid, start, &dir), None, "ambiguous logs must not be guessed");
+        drop((file, crash, other));
+        assert_eq!(open_log(pid, start, &dir), None);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+}

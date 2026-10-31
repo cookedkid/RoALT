@@ -1,6 +1,6 @@
 <div align="center">
 
-# RoALT for macOS — 0.7.1
+# RoALT for macOS — 0.7.2
 
 ### A native Apple Silicon port of the Roblox account manager
 
@@ -32,7 +32,7 @@ Unsupported controls are hidden or rejected on macOS. See [the port notes](docs/
 
 ## Install on macOS
 
-**Apple Silicon only.** [Download the 0.7.1 Mac preview ZIP](https://github.com/cookedkid/RoALT/releases/download/macos-preview-0.7.1-2/RoALT-macOS-Apple-Silicon.zip), unzip it, and drag `RoALT.app` into Applications. [Release notes and checksums](https://github.com/cookedkid/RoALT/releases/tag/macos-preview-0.7.1-2).
+**Apple Silicon only.** [Download the 0.7.2 Mac preview ZIP](https://github.com/cookedkid/RoALT/releases/download/macos-preview-0.7.2-3/RoALT-macOS-Apple-Silicon.zip), unzip it, and drag `RoALT.app` into Applications. [Release notes and checksums](https://github.com/cookedkid/RoALT/releases/tag/macos-preview-0.7.2-3).
 
 Or install the same preview with one Terminal command:
 
@@ -44,7 +44,7 @@ This downloads the prebuilt app into `~/Applications`. **No Rust, Node, Xcode or
 
 The preview is ad-hoc signed and not notarized. macOS may require approval to open it or access an existing RoALT Keychain item. Approve requested Accessibility, Screen Recording and Input Monitoring access yourself, then restart RoALT. Anti-AFK remains off until enabled.
 
-RoALT does not yet check for or install updates inside the Mac app. New versions require a replacement download or an updated installer command; this command currently installs preview 0.7.1.
+RoALT does not yet check for or install updates inside the Mac app. New versions require a replacement download or an updated installer command; this command currently installs preview 0.7.2.
 
 <details>
 <summary>Build from source instead</summary>
@@ -85,7 +85,7 @@ Download the Mac preview ZIP or use the [one-command binary installer](#install-
 <summary><b>Why does macOS ask for permissions?</b></summary>
 <br>
 
-Accessibility allows RoALT to arrange Roblox windows and focus them for opt-in anti-AFK. Screen Recording provides live window previews. Input Monitoring lets anti-AFK detect recent human activity; macOS also controls permission to post input. RoALT asks for missing access on first launch, but only you can grant it in **System Settings → Privacy & Security**. Restart RoALT after granting it. Features that need a declined permission will remain unavailable until you grant it.
+Accessibility allows RoALT to arrange Roblox windows and focus them for opt-in anti-AFK. Screen Recording provides live window previews. Input Monitoring lets anti-AFK detect recent human activity; macOS also controls permission to post input. RoALT asks for missing access on first launch, but only you can grant it in **System Settings → Privacy & Security**. Restart RoALT after granting it. If Accessibility is already on but window controls fail after an update, quit RoALT, remove its old Accessibility entry, add the current installed RoALT.app, enable it and reopen RoALT. Ad-hoc preview builds have different code identities. Features that need a declined permission will remain unavailable until you grant it.
 
 </details>
 
