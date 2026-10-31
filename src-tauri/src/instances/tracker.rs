@@ -702,25 +702,32 @@ impl Tracker {
                     let clients = s.tracker.clients();
                     super::resize::set_clients(clients.iter().map(|c| c.1).collect());
                     let (held, throttle_moved) = s.tracker.throttle(v.mem_throttle.mb);
-                    if !clients.is_empty() {
+                    {
                         let fg = if v.adaptive.enabled { process::foreground_pid() } else { None };
                         s.limiter.sync(&super::limits::plan(&clients, &v, fg, crate::commands::cores(), &held));
                     }
                     // Once per client, without taking the focus (anti-AFK then skips it).
                     for pid in s.tracker.first_windows(&|pid| process::main_window(pid).is_some()) {
                         let id = clients.iter().find(|c| c.1 == pid).map(|c| c.0.clone());
+                        #[cfg(target_os = "macos")]
+                        let started = clients.iter().find(|c|c.1==pid).map(|c|c.2);
                         let keeps_size = |id: &str| s.tracker.get(id).and_then(|i| s.db.account(i.account_id).ok()).is_some_and(|a| a.full_quality);
                         let tiny = id.filter(|id| v.tiny_on_launch && !keeps_size(id) && s.tracker.set_micro(id, true));
                         let (size, minimize, park) = ((v.micro_width, v.micro_height), v.minimize_on_launch, v.park_minimized);
                         // Not on this thread: a busy client's ShowWindow would stop every poll.
                         tauri::async_runtime::spawn_blocking(move || {
+                            #[cfg(target_os="macos")]
+                            if !started.is_some_and(|t|process::start_time(pid)==Some(t)){return}
                             if let Some(id) = tiny
                                 && let Err(e) = super::window::micro(&id, pid, true, size)
                             {
                                 log::debug!("instance {id}: not made tiny at launch: {e}");
                             }
                             if minimize {
+                                #[cfg(windows)]
                                 super::window::minimize_quietly(pid, park);
+                                #[cfg(target_os = "macos")]
+                                if let Some(t)=started {let _=crate::commands::show_tracked(pid,t,super::window::Show::Minimize,park);}
                             }
                         });
                     }
@@ -1488,7 +1495,10 @@ mod tests {
 
     /// A log written by a client that started at `secs`: created then, modified a bit ago.
     fn old_log(path: &Path, secs: u64) {
+        #[cfg(windows)]
         use std::os::windows::fs::FileTimesExt;
+        #[cfg(target_os = "macos")]
+        use std::os::macos::fs::FileTimesExt;
         let times = std::fs::FileTimes::new()
             .set_created(UNIX_EPOCH + Duration::from_secs(secs))
             .set_modified(std::time::SystemTime::now() - Duration::from_secs(2));

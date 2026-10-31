@@ -87,7 +87,9 @@ fn system_language() -> String {
 
 #[cfg(not(windows))]
 fn system_language() -> String {
-    String::new()
+    unsafe extern "C" {fn ro_preferred_language(out:*mut std::ffi::c_char,len:usize)->bool;}
+    let mut bytes=[0i8;128];
+    if unsafe{ro_preferred_language(bytes.as_mut_ptr(),bytes.len())}{unsafe{std::ffi::CStr::from_ptr(bytes.as_ptr())}.to_string_lossy().into_owned()}else{String::new()}
 }
 
 /// CLDR plural category of a whole number in `lang`.

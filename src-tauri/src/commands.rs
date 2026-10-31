@@ -120,8 +120,14 @@ pub async fn vault_set_mode(
 ) -> Result<()> {
     let rec = s.db.vault_record()?.ok_or(AppError::Internal("vault record missing".into()))?;
     // Otherwise setting a master password would be a way round the Hello check on reveal.
-    if rec.mode == VaultMode::Dpapi && mode == VaultMode::Master && crate::vault::hello_available().await {
+    if rec.mode == VaultMode::Dpapi && mode == VaultMode::Master {
+        #[cfg(windows)]
+        let must_reauth = crate::vault::hello_available().await;
+        #[cfg(target_os = "macos")]
+        let must_reauth = true;
+        if must_reauth {
         reauth(&app, &s, None, &tr!("Confirm it's you to set a master password.")).await?;
+        }
     }
     let new_rec = s.vault.rewrap(&rec, mode, current_password.as_deref(), new_password.as_deref())?;
     s.db.save_vault_record(&new_rec)?;
@@ -1059,6 +1065,7 @@ fn shutdown_secs(at_ms: Option<i64>, in_secs: Option<u32>, now_ms: i64) -> Resul
 }
 
 /// Runs System32\shutdown.exe without a window: its exit code and what it printed.
+#[cfg(windows)]
 fn shutdown_exe(args: &[&str]) -> Result<(i32, String)> {
     use std::os::windows::process::CommandExt;
     let root = std::env::var_os("SystemRoot").map(std::path::PathBuf::from).unwrap_or_else(|| r"C:\Windows".into());
@@ -1070,6 +1077,9 @@ fn shutdown_exe(args: &[&str]) -> Result<(i32, String)> {
     }
     Ok((code, text))
 }
+
+#[cfg(target_os = "macos")]
+fn shutdown_exe(_: &[&str]) -> Result<(i32,String)> { Err(AppError::Invalid("Scheduled system shutdown is unavailable on macOS.".into())) }
 
 /// The settings-table row with the scheduled shutdown's deadline (Unix ms), so RoALT still knows
 /// it (and can cancel it) after a restart; Windows keeps the timer either way.
@@ -1435,6 +1445,8 @@ fn check_limits(l: &Limits) -> Result<()> {
 /// its bootstrapper gets them once it is found.
 #[tauri::command]
 pub async fn instance_set_limits(app: AppHandle, s: State<'_, App>, id: String, limits: Limits) -> Result<()> {
+    #[cfg(target_os = "macos")]
+    crate::instances::limits::validate(limits)?;
     check_limits(&limits)?;
     let (prev, client) = s.tracker.set_limits(&id, limits).ok_or(AppError::NotFound)?;
     instances_changed(&app);
@@ -1469,6 +1481,8 @@ pub async fn instance_set_limits(app: AppHandle, s: State<'_, App>, id: String, 
 /// Opts one running client in or out of anti-AFK.
 #[tauri::command]
 pub fn instance_set_anti_afk(app: AppHandle, s: State<'_, App>, id: String, enabled: bool) -> Result<()> {
+    #[cfg(target_os = "macos")]
+    if enabled { crate::instances::afk::validate(s.db.settings()?.anti_afk.mode)?; }
     if !s.tracker.set_anti_afk(&id, enabled) {
         return Err(AppError::NotFound);
     }
@@ -1512,7 +1526,10 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> 
 #[tauri::command]
 pub async fn instance_thumbnail(s: State<'_, App>, id: String, max_w: u32) -> Result<tauri::ipc::Response> {
     let Some(pid) = client_pid(&s, &id)? else { return Ok(tauri::ipc::Response::new(Vec::new())) };
+    #[cfg(windows)]
     let thumb = blocking(move || crate::instances::window::thumbnail(pid, max_w.clamp(16, 1280))).await?;
+    #[cfg(target_os="macos")]
+    let thumb = {let start=s.tracker.clients().into_iter().find(|c|c.0==id).ok_or_else(not_started)?.2;blocking(move||crate::instances::window::thumbnail(pid,start,max_w.clamp(16,1280))).await??};
     let bytes = thumb.map_or_else(Vec::new, |(t, parked)| {
         let mut b = Vec::with_capacity(12 + t.rgba.len());
         b.extend(t.width.to_le_bytes());
@@ -1524,12 +1541,18 @@ pub async fn instance_thumbnail(s: State<'_, App>, id: String, max_w: u32) -> Re
     Ok(tauri::ipc::Response::new(bytes))
 }
 
+pub(crate) fn show_tracked(pid:u32,start:u64,what:crate::instances::window::Show,park:bool)->Result<()> {
+    if crate::instances::process::start_time(pid)!=Some(start){return Err(not_started())}
+    crate::instances::window::show(pid,what,park)
+}
+
 /// Brings one client's window to the front, minimizes or restores it.
 #[tauri::command]
 pub async fn instance_show(s: State<'_, App>, id: String, what: crate::instances::window::Show) -> Result<()> {
     let pid = client_pid(&s, &id)?.ok_or_else(not_started)?;
     let park = s.db.settings()?.park_minimized;
-    blocking(move || crate::instances::window::show(pid, what, park)).await?
+    let started=s.tracker.clients().into_iter().find(|c|c.1==pid).ok_or_else(not_started)?.2;
+    blocking(move || show_tracked(pid,started,what,park)).await?
 }
 
 /// Minimizes or restores every running client's window (focus is for one client).
@@ -1538,17 +1561,21 @@ pub async fn instances_show_all(s: State<'_, App>, what: crate::instances::windo
     if what == crate::instances::window::Show::Focus {
         return Err(AppError::Invalid(tr!("Only one client can be in front.")));
     }
-    let pids: Vec<u32> = s.tracker.clients().into_iter().map(|c| c.1).collect();
+    let clients = s.tracker.clients();
     let park = s.db.settings()?.park_minimized;
     // One without a window yet has nothing to show or hide.
     blocking(move || {
-        for pid in pids {
-            if let Err(e) = crate::instances::window::show(pid, what, park) {
+        for (_,pid,started,_) in clients {
+            if let Err(e) = show_tracked(pid,started,what,park) {
+                #[cfg(target_os = "macos")]
+                return Err(e);
+                #[cfg(windows)]
                 log::debug!("show all: client {pid}: {e}");
             }
         }
+        Ok(())
     })
-    .await
+    .await?
 }
 
 /// Makes one client's window small (`window::MICRO` client area) or puts it back as it was.
@@ -1560,7 +1587,8 @@ pub async fn instance_micro(app: AppHandle, s: State<'_, App>, id: String, on: b
     let v = s.db.settings()?;
     let wanted = size.unwrap_or((v.micro_width, v.micro_height));
     check_window_size(wanted)?;
-    let size = blocking(move || crate::instances::window::micro(&id2, pid, on, wanted)).await??;
+    let start=s.tracker.clients().into_iter().find(|c|c.0==id).ok_or_else(not_started)?.2;
+    let size = blocking(move || {if crate::instances::process::start_time(pid)!=Some(start){return Err(not_started())}crate::instances::window::micro(&id2, pid, on, wanted)}).await??;
     s.tracker.set_micro(&id, on);
     instances_changed(&app);
     Ok(size)
@@ -1576,6 +1604,7 @@ fn check_window_size((w, h): (u32, u32)) -> Result<()> {
 
 /// Lays every running client's window out in a grid on the monitor RoALT is on, `micro`-sized
 /// or as big as all fit (`window::tile`; minimized ones are left alone). How many it laid out.
+#[cfg(windows)]
 #[tauri::command]
 pub async fn instances_tile(app: AppHandle, s: State<'_, App>, micro: bool) -> Result<usize> {
     let clients: Vec<(String, u32)> = s.tracker.clients().into_iter().map(|c| (c.0, c.1)).collect();
@@ -1592,6 +1621,13 @@ pub async fn instances_tile(app: AppHandle, s: State<'_, App>, micro: bool) -> R
     }
     instances_changed(&app);
     Ok(tiled.len())
+}
+
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub async fn instances_tile(app:AppHandle,s:State<'_,App>,micro:bool)->Result<usize>{
+ let clients=s.tracker.clients().into_iter().map(|c|(c.0,c.1,c.2)).collect::<Vec<_>>();let v=s.db.settings()?;let size=micro.then_some((v.micro_width,v.micro_height));
+ let tiled=blocking(move||crate::instances::window::tile(&clients,size)).await??;for id in &tiled{s.tracker.set_micro(id,micro);}instances_changed(&app);Ok(tiled.len())
 }
 
 /// CPU, memory and IO of each running client (sampled at most every 2 s).
@@ -1693,6 +1729,7 @@ fn protect_running(s: &App, v: &Settings) {
 /// next launch, next start) or after `roblox_close_all`.
 #[tauri::command]
 pub fn multi_instance_set(s: State<'_, App>, enabled: bool) -> Result<MultiInstanceStatus> {
+
     let mut v = s.db.settings()?;
     v.multi_instance = enabled;
     s.db.save_settings(&v)?;
@@ -1813,9 +1850,13 @@ async fn close_roblox(s: &App, force: bool, keep_closing: bool) -> Result<MultiI
 /// Clients that crashed, were disconnected or hung, newest first (the last 200).
 /// What a diagnostics report reads: the header now, the logs named for a background thread.
 fn diagnostics_sources(s: &App) -> Result<crate::diagnostics::Sources> {
+    #[cfg(windows)]
     use windows::Win32::System::Registry::HKEY_LOCAL_MACHINE;
+    #[cfg(windows)]
     let reg = |value| crate::launcher::client::reg_string(HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows NT\CurrentVersion", Some(value)).unwrap_or_default();
     let v = s.db.settings()?;
+    #[cfg(target_os = "macos")]
+    let reg = |value: &str| if value == "ProductName" { "macOS".to_string() } else { String::new() };
     let head = format!(
         "RoALT {} on {} {} (build {})\nMulti-instance: {}\nPerformance: {}\n",
         env!("CARGO_PKG_VERSION"),
@@ -2300,6 +2341,17 @@ pub(crate) fn apply_performance(v: &mut Settings, patch: &SettingsPatch) -> Resu
 
 #[tauri::command]
 pub fn settings_set(app: AppHandle, s: State<'_, App>, patch: SettingsPatch) -> Result<Settings> {
+    #[cfg(target_os = "macos")]
+    if patch.trim_every_min.is_some_and(|n|n>0) || patch.auto_spread==Some(true)
+      || patch.lighter_rendering==Some(true) || patch.park_minimized==Some(true)
+      || patch.auto_update==Some(true) || patch.self_update==Some(true)
+      {
+       return Err(AppError::Invalid("This Windows-specific option is unavailable in the macOS build.".into()));
+    }
+    #[cfg(target_os = "macos")]
+    if let Some(a) = patch.adaptive { crate::instances::limits::validate(a.background)?; }
+    #[cfg(target_os="macos")]
+    if let Some(a)=patch.anti_afk.filter(|a|a.enabled){crate::instances::afk::validate(a.mode)?;}
     if patch.auto_lock_minutes.is_some() {
         unlocked(&s)?;
     }

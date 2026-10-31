@@ -64,7 +64,7 @@ impl Sampler {
         }
         let times = cpu_times()?;
         let (used, total) = memory()?;
-        let usage = SystemUsage { cpu_pct: last.as_ref().and_then(|(_, _, before)| busy_pct(*before, times)), mem_used_mb: used as f64 / MB, mem_total_mb: total as f64 / MB };
+        let usage = SystemUsage { gpu_pct:None, cpu_pct: last.as_ref().and_then(|(_, _, before)| busy_pct(*before, times)), mem_used_mb: used as f64 / MB, mem_total_mb: total as f64 / MB };
         *last = Some((Instant::now(), usage, times));
         Some(usage)
     }

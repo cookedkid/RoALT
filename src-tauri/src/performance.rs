@@ -16,7 +16,10 @@ const VERSION: u32 = 1;
 /// A profile is a few hundred bytes; anything bigger isn't one.
 pub const MAX_BYTES: usize = 64 * 1024;
 /// The Dashboard's preview frame rates (`src/features/dashboard/previewFps.ts`).
+#[cfg(windows)]
 const PREVIEW_FPS: [u32; 3] = [15, 30, 60];
+#[cfg(target_os = "macos")]
+const PREVIEW_FPS: [u32; 3] = [2,5,10];
 
 /// The settings a profile carries; None: not in it (left as it is).
 #[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq)]
@@ -165,11 +168,11 @@ mod tests {
         let mut v = Settings::default();
         v.fps_cap = 30;
         v.mem_restart_mb = 2048;
-        let p = parse(&of(&v, Some(60), 1), &Settings::default()).unwrap();
+        let p = parse(&of(&v, Some(PREVIEW_FPS[2]), 1), &Settings::default()).unwrap();
         assert_eq!(p.fps_cap, Some(30));
         assert_eq!(p.mem_restart_mb, Some(2048));
-        assert_eq!(p.lighter_rendering, Some(true));
-        assert_eq!(p.preview_fps, Some(60));
+        assert_eq!(p.lighter_rendering, Some(cfg!(windows)));
+        assert_eq!(p.preview_fps, Some(PREVIEW_FPS[2]));
         let mut applied = Settings::default();
         crate::commands::apply_performance(&mut applied, &patch_of(&p)).unwrap();
         assert_eq!(applied, v, "applying it gives the same settings");

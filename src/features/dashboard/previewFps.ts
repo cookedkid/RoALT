@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 /** Live preview frame rates; the choice is remembered on this PC and shared by the Dashboard and
  * the Performance tab. */
-export const PREVIEW_FPS = [15, 30, 60] as const;
+export const PREVIEW_FPS = (navigator.platform.startsWith("Mac") ? [2, 5, 10] : [15, 30, 60]) as readonly (2 | 5 | 10 | 15 | 30 | 60)[];
 export type PreviewFps = (typeof PREVIEW_FPS)[number];
 const KEY = "roalt.previewFps";
 const CHANGED = "roalt:previewFps";
@@ -12,9 +12,9 @@ let unsaved: PreviewFps | null = null;
 export function storedFps(): PreviewFps {
   try {
     const n = Number(localStorage.getItem(KEY));
-    return PREVIEW_FPS.find((f) => f === n) ?? unsaved ?? 15;
+    return PREVIEW_FPS.find((f) => f === n) ?? unsaved ?? (navigator.platform.startsWith("Mac") ? 5 : 15);
   } catch {
-    return unsaved ?? 15;
+    return unsaved ?? (navigator.platform.startsWith("Mac") ? 5 : 15);
   }
 }
 

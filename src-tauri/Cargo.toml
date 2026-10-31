@@ -7,6 +7,7 @@ edition = "2024"
 rust-version = "1.95"
 
 [build-dependencies]
+cc = "1"
 tauri-build = { version = "2.7", features = [] }
 
 [dependencies]
@@ -33,6 +34,9 @@ zeroize = { version = "1.9", features = ["serde"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 url = "2"
 ts-rs = "12"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "3"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62", features = [

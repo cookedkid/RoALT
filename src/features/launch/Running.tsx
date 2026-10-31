@@ -11,6 +11,8 @@ import { accountName, Avatar } from "../accounts/shared";
 import { launchBlocked, launched, launchFailed } from "./LaunchView";
 
 // Getters: labels are translated when read (at render), not once at load.
+const IS_MAC = navigator.platform.startsWith("Mac");
+
 export const STATES: Record<InstanceState, [label: string, color: string]> = {
   get starting(): [string, string] { return [t("launch.state.starting"), "var(--dim)"]; },
   get joining(): [string, string] { return [t("launch.state.joining"), "var(--blue)"]; },
@@ -98,7 +100,7 @@ function LimitsBody({ inst }: { inst: Instance }) {
         <span>{t("launch.limits.eco")}</span>
         <Switch label={t("launch.limits.eco")} checked={inst.limits.eco} onChange={(eco) => set({ eco })} />
       </div>
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      {!IS_MAC && <div className="flex flex-wrap items-center justify-between gap-2">
         <span>{t("launch.limits.trim")}</span>
         <span className="flex flex-wrap items-center gap-2">
           <Segmented
@@ -112,7 +114,7 @@ function LimitsBody({ inst }: { inst: Instance }) {
             {trimming ? t("launch.limits.trimming") : t("launch.limits.trimNow")}
           </button>
         </span>
-      </div>
+      </div>}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span>{t("launch.limits.windowSize")}</span>
         <span className="flex flex-wrap items-center gap-2">
@@ -122,7 +124,7 @@ function LimitsBody({ inst }: { inst: Instance }) {
           {inst.micro && <button className="btn btn-sm" onClick={() => void resize(false)}>{t("dashboard.normalSize")}</button>}
         </span>
       </div>
-      <fieldset className="flex flex-col gap-1.5">
+      {!IS_MAC && <fieldset className="flex flex-col gap-1.5">
         <legend className="flex w-full items-center justify-between gap-2">
           {t("launch.limits.cores")}
           {inst.limits.affinity !== null && (
@@ -137,7 +139,7 @@ function LimitsBody({ inst }: { inst: Instance }) {
             </label>
           ))}
         </div>
-      </fieldset>
+      </fieldset>}
       <div className="flex items-center justify-between gap-2">
         <span className="flex flex-col">
           <span>{t("launch.limits.antiAfk")}</span>

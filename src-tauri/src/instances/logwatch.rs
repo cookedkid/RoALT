@@ -70,7 +70,10 @@ fn client_initiated(line: &str) -> bool {
 
 /// `%LOCALAPPDATA%\Roblox\logs`.
 pub fn logs_dir() -> Option<PathBuf> {
-    std::env::var_os("LOCALAPPDATA").map(|d| PathBuf::from(d).join("Roblox").join("logs"))
+    {
+ #[cfg(windows)] { std::env::var_os("LOCALAPPDATA").map(|d| PathBuf::from(d).join("Roblox").join("logs")) }
+ #[cfg(target_os = "macos")] { std::env::var_os("HOME").map(|d| PathBuf::from(d).join("Library/Logs/Roblox")) }
+ }
 }
 
 /// The `_Player_` log (not `_CrashHandler_`) modified since `since` whose first lines name
@@ -302,10 +305,14 @@ fn is_guid(s: &str) -> bool {
 }
 
 fn open_shared(path: &Path) -> std::io::Result<File> {
+    #[cfg(windows)]
     use std::os::windows::fs::OpenOptionsExt;
     // FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE: Roblox keeps writing (and may
     // delete) the file while it is open here.
-    std::fs::OpenOptions::new().read(true).share_mode(0x1 | 0x2 | 0x4).open(path)
+    #[cfg(windows)]
+    { std::fs::OpenOptions::new().read(true).share_mode(0x1 | 0x2 | 0x4).open(path) }
+    #[cfg(not(windows))]
+    { File::open(path) }
 }
 
 #[cfg(test)]

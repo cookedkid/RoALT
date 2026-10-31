@@ -9,15 +9,27 @@ mod error;
 mod instances;
 mod launcher;
 mod model;
+#[cfg(windows)]
+mod network;
+#[cfg(target_os = "macos")]
+#[path = "macos/network.rs"]
 mod network;
 mod performance;
 mod roblox_api;
 mod rpc;
+#[cfg(windows)]
+mod self_update;
+#[cfg(target_os = "macos")]
+#[path = "macos/self_update.rs"]
 mod self_update;
 mod splash;
 mod storage;
 mod tray;
 mod vault;
+#[cfg(windows)]
+mod webview;
+#[cfg(target_os = "macos")]
+#[path = "macos/webview.rs"]
 mod webview;
 
 use std::io::ErrorKind;
@@ -95,8 +107,14 @@ pub struct Location {
 }
 
 /// `%LOCALAPPDATA%\RoALT`: the data folder unless moved, and where location.json lives.
+#[cfg(windows)]
 pub fn default_dir() -> PathBuf {
     std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir).join("RoALT")
+}
+
+#[cfg(target_os = "macos")]
+pub fn default_dir() -> PathBuf {
+ std::env::var_os("HOME").map(PathBuf::from).expect("HOME must be set").join("Library/Application Support/RoALT")
 }
 
 /// A test run (`ROALT_DATA_DIR`): its data folder can't be moved.
@@ -236,7 +254,7 @@ fn main_window(app: &TauriApp, data_dir: &Path, skip_splash: bool) -> tauri::Res
         builder = builder.initialization_script("window.__ROALT_SKIP_SPLASH = true;");
     }
     // Debug builds only: DevTools protocol for automated UI checks on a hidden desktop.
-    #[cfg(debug_assertions)]
+    #[cfg(all(debug_assertions, windows))]
     if let Ok(port) = std::env::var("ROALT_CDP_PORT") {
         builder = builder.additional_browser_args(&format!(
             "--remote-debugging-port={port} --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection"
@@ -271,6 +289,7 @@ fn in_app(url: &url::Url) -> bool {
 
 /// Keeps a folder RoALT creates from being writable by other users of the PC: what lands in it
 /// includes the UI's WebView2 profile. A drive without permissions (exFAT) can't, and is left so.
+#[cfg(windows)]
 pub fn restrict_to_user(dir: &Path) {
     use std::os::windows::process::CommandExt;
     let root = std::env::var_os("SystemRoot").map(PathBuf::from).unwrap_or_else(|| r"C:\Windows".into());
@@ -285,6 +304,12 @@ pub fn restrict_to_user(dir: &Path) {
         Ok(o) => log::warn!("could not restrict the data folder: icacls exit {:?}", o.status.code()),
         Err(e) => log::warn!("could not restrict the data folder: {e}"),
     }
+}
+
+#[cfg(target_os = "macos")]
+pub fn restrict_to_user(dir: &Path) {
+ use std::os::unix::fs::PermissionsExt;
+ if let Err(e) = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700)) { log::warn!("Could not restrict data directory: {e}"); }
 }
 
 /// Master-password mode: lock after the configured idle time.
@@ -326,6 +351,7 @@ static LOG_DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 /// A startup failure the user must see: there is no window to show it in.
 fn fatal(message: &str) -> ! {
     use std::io::Write;
+    #[cfg(windows)]
     use windows::Win32::UI::WindowsAndMessaging::{MB_ICONERROR, MB_OK, MessageBoxW};
     log::error!("{message}");
     // Before the log plugin exists `log::error!` goes nowhere, so append the line directly.
@@ -335,7 +361,9 @@ fn fatal(message: &str) -> ! {
         let _ = writeln!(f, "[fatal] {message}");
     }
     // SAFETY: a plain modal message box with no owner window.
+    #[cfg(windows)]
     unsafe { MessageBoxW(None, &windows::core::HSTRING::from(message), windows::core::w!("RoALT"), MB_ICONERROR | MB_OK) };
+    eprintln!("RoALT: {message}");
     std::process::exit(1)
 }
 
@@ -438,6 +466,8 @@ fn init(app: &TauriApp, data_dir: &Path, moved_from: Option<&Path>) -> std::resu
             why = e
         )
     })?;
+    #[cfg(target_os = "macos")]
+    request_initial_permissions(data_dir);
     spawn_auto_lock(app.handle().clone());
     instances::Tracker::spawn(app.handle().clone());
     instances::afk::spawn(app.handle().clone());
@@ -449,6 +479,22 @@ fn init(app: &TauriApp, data_dir: &Path, moved_from: Option<&Path>) -> std::resu
     launcher::update::spawn(app.handle().clone());
     remind_bandwidth(app.handle().clone());
     Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn request_initial_permissions(data_dir: &Path) {
+    let marker = data_dir.join("permissions-requested-v1");
+    let first_run = std::fs::OpenOptions::new().write(true).create_new(true).open(&marker);
+    if first_run.is_ok() {
+        std::thread::spawn(|| unsafe { ro_request_initial_permissions() });
+    } else if first_run.is_err_and(|e| e.kind() != ErrorKind::AlreadyExists) {
+        log::warn!("Could not record initial macOS permission request");
+    }
+}
+
+#[cfg(target_os = "macos")]
+unsafe extern "C" {
+    fn ro_request_initial_permissions();
 }
 
 /// Windows drops the bandwidth policy when it restarts; RoALT never sets it again on its own
@@ -485,6 +531,8 @@ fn on_window_event(window: &tauri::Window, event: &WindowEvent) {
 }
 
 fn main() {
+    #[cfg(target_os = "macos")]
+    if let Some(code)=instances::cpu::helper_main(){std::process::exit(code);}
     webview::clear_webview2_env();
     // Windows' language until the settings are read.
     i18n::set("");
@@ -492,6 +540,7 @@ fn main() {
     if let Err(e) = std::fs::create_dir_all(&data_dir) {
         fatal(&tr!("RoALT can't create its data folder {path}: {why}", path = data_dir.display(), why = e));
     }
+    restrict_to_user(&data_dir);
     let log_dir = data_dir.join("logs");
     let _ = std::fs::create_dir_all(&log_dir);
     let _ = LOG_DIR.set(log_dir.clone());
@@ -661,7 +710,7 @@ fn main() {
         });
 }
 
-#[cfg(test)]
+#[cfg(all(test, windows))]
 mod tests {
     use super::*;
 

@@ -64,7 +64,44 @@ export function setLang(pref: string | undefined) {
 
 export const getLang = () => lang;
 
+// Platform-specific security copy must describe the actual credential provider.
+const macCopy: Partial<Record<Key, string>> = {
+ "settings.antiAfkHint": "Opt-in: briefly focus visible tracked clients and send Space while you are idle. Requires Accessibility and Input Monitoring in System Settings → Privacy & Security; restart RoALT after granting permissions.",
+ "settings.antiAfkFocusHint": "After 5 seconds without keyboard or mouse activity, briefly focus each due client and send Space. Manual input interrupts the round. Minimized clients are skipped. Game acceptance is not guaranteed.",
+ "dashboard.previewFpsHint": "Window-only captures require Screen Recording permission. Lower rates save CPU. Minimized windows have no live preview.",
+ "launch.limits.cpu": "Cooperative CPU cap (% of whole Mac)",
+ "settings.multiHint": "Launch separate macOS Roblox clients directly. Existing clients keep running; no Roblox executable is modified.",
+ "settings.protectLoginHint": "New Roblox clients cannot read or write shared native cookie stores. Each client uses its own launch ticket; existing clients are unchanged. This does not isolate all Roblox preferences or logs.",
+ "launch.multi.takeOverText": "Enable separate Roblox launches on macOS. Existing clients are left running and unchanged.",
+ "settings.efficiency": "Background priority",
+ "settings.adaptiveBgEco": "Lower background CPU and I/O priority",
+ "settings.adaptiveBgHint": "Apply cooperative CPU caps and background scheduling priority while a client is not in front.",
+ "launch.limits.eco": "Background priority",
+ "launch.limits.help": "CPU cap is a percentage of total Mac CPU capacity, enforced by brief process pauses. It may stutter and is not a kernel quota. A separate guardian resumes clients if RoALT or the governor exits or stalls. Background priority lowers CPU and I/O scheduling priority.",
+ "settings.memRestartHint": "Restart a client whose physical memory footprint stays over this value for 30 seconds. 0 turns it off.",
+ "monitor.privateMemory": "Physical footprint",
+ "monitor.privateMemoryAll": "Physical footprint, all clients",
+ "performance.intro": "Tune FPS, graphics, cooperative CPU caps and background priority. CPU caps use brief pauses and can stutter; percentages refer to the entire Mac, not one core.",
+ "settings.minimizeHint": "Minimize after launch. Enable RoALT in System Settings → Privacy & Security → Accessibility first.",
+ "home.welcomeLead": "Manage your Roblox accounts on Mac. Three steps to your first game.",
+ "home.noLimit": "Launch multiple Roblox clients with multi-instance enabled.",
+ "home.step1Text": "Sign in through Roblox’s own page. Your sign-in is encrypted and stays on this Mac.",
+ "app.encrypted": "Encrypted on this Mac",
+ "app.vaultUnlockedDpapi": "Vault · Keychain · unlocked",
+ "settings.encryptionDpapi": "macOS Keychain",
+ "settings.encryptionHintDpapi": "macOS Keychain protects the local vault key. Set a master password for an additional unlock prompt.",
+ "settings.clipboardHintHello": "Set a master password to copy or reveal cookies on macOS.",
+ "accounts.detail.cookieAskHello": "Set a master password in Settings before revealing or copying cookies.",
+ "settings.removeMasterText": "Cookies will be protected by macOS Keychain and open without a master-password prompt.",
+ "settings.removeMasterDone": "Master password removed. The vault now opens with macOS Keychain.",
+ "settings.languageWindows": "System",
+ "settings.languageHint": "System follows your macOS display language when available, otherwise English.",
+ "settings.themeHint": "System follows the macOS appearance.",
+ "settings.publicHint": "Network classification is unavailable on macOS. Turning this off blocks all launches.",
+};
+
 function lookup(key: Key, p?: Params): string {
+  if (navigator.platform.startsWith("Mac") && macCopy[key]) return macCopy[key]!;
   const cat = catalogs[lang];
   const plural = typeof p?.count === "number" ? `${key}_${rules.select(p.count)}` : null;
   return (plural && (cat[plural] ?? cat[`${key}_other`])) ?? cat[key] ?? (en as Catalog)[key] ?? (en as Catalog)[`${key}_other`] ?? key;

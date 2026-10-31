@@ -2,7 +2,9 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
   "description": "The RoALT window. Roblox login and session windows get no capability.",
-  "windows": ["main"],
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     "core:window:allow-minimize",
@@ -16,8 +18,21 @@
     {
       "identifier": "opener:allow-open-url",
       "allow": [
-        { "url": "https://www.roblox.com/*" },
-        { "url": "https://github.com/inspectsoftware/*" }
+        {
+          "url": "https://www.roblox.com/*"
+        },
+        {
+          "url": "https://github.com/inspectsoftware/*"
+        },
+        {
+          "url": "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+        },
+        {
+          "url": "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+        },
+        {
+          "url": "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"
+        }
       ]
     }
   ]

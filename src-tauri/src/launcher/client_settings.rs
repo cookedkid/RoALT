@@ -83,7 +83,10 @@ struct Kept {
 }
 
 fn file() -> Option<PathBuf> {
-    std::env::var_os("LOCALAPPDATA").map(|d| PathBuf::from(d).join("Roblox").join("GlobalBasicSettings_13.xml"))
+    {
+ #[cfg(windows)] { std::env::var_os("LOCALAPPDATA").map(|d| PathBuf::from(d).join("Roblox").join("GlobalBasicSettings_13.xml")) }
+ #[cfg(target_os = "macos")] { std::env::var_os("HOME").map(|d| PathBuf::from(d).join("Library/Roblox/GlobalBasicSettings_13.xml")) }
+ }
 }
 
 /// The setting's number in `text` (pure).

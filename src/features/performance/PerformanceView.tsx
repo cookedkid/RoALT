@@ -12,6 +12,8 @@ import { friendly, toast, toastError } from "../../ui/Toast";
 import { BandwidthRow, Row } from "../settings/SettingsView";
 import { PREVIEW_FPS, setPreviewFps, storedFps, usePreviewFps, type PreviewFps } from "../dashboard/previewFps";
 
+const IS_MAC = navigator.platform.startsWith("Mac");
+
 const profileFilter = () => [{ name: t("performance.profileFilter"), extensions: ["json"] }];
 /** A share code: this prefix, then the profile's JSON as base64url. */
 const CODE = "RoALT-PERF:";
@@ -123,6 +125,7 @@ function RenderFlagRows({ settings }: { settings: Settings }) {
 /** Everything that changes how much the clients and RoALT itself use, and profiles to share it. */
 export function PerformanceView({ settings }: { settings: Settings }) {
   const set = useSetSettings();
+  const background = IS_MAC ? { ...settings.adaptive.background, trimEveryMin: null, affinity: null } : settings.adaptive.background;
   const [previewFps, setFps] = usePreviewFps();
   const [incoming, setIncoming] = useState<Profile | null>(null);
   const [more, setMore] = useState(false);
@@ -160,11 +163,12 @@ export function PerformanceView({ settings }: { settings: Settings }) {
           </div>
           <FpsRow settings={settings} />
           <SwitchRow title={t("settings.lowGraphics")} hint={t("performance.hintLow")} more={t("settings.lowGraphicsHint")} checked={settings.lowGraphics} onChange={(lowGraphics) => set.mutate({ lowGraphics })} />
-          <SwitchRow title={t("settings.lighterRendering")} hint={t("performance.hintLight")} more={t("performance.hintLight")} checked={settings.lighterRendering} onChange={(lighterRendering) => set.mutate({ lighterRendering })} />
-          {settings.lighterRendering && <RenderFlagRows settings={settings} />}
+          {!IS_MAC && <SwitchRow title={t("settings.lighterRendering")} hint={t("performance.hintLight")} more={t("performance.hintLight")} checked={settings.lighterRendering} onChange={(lighterRendering) => set.mutate({ lighterRendering })} />}
+          {!IS_MAC && settings.lighterRendering && <RenderFlagRows settings={settings} />}
           <SwitchRow title={t("settings.minimize")} hint={t("performance.hintMinimize")} more={t("settings.minimizeHint")} checked={settings.minimizeOnLaunch} onChange={(minimizeOnLaunch) => set.mutate({ minimizeOnLaunch })} />
-          <SwitchRow title={t("settings.parkMinimized")} hint={t("performance.hintPark")} more={t("settings.parkMinimizedHint")} checked={settings.parkMinimized} onChange={(parkMinimized) => set.mutate({ parkMinimized })} />
+          {!IS_MAC && <SwitchRow title={t("settings.parkMinimized")} hint={t("performance.hintPark")} more={t("settings.parkMinimizedHint")} checked={settings.parkMinimized} onChange={(parkMinimized) => set.mutate({ parkMinimized })} />}
           <SwitchRow title={t("performance.tinyOnLaunch")} hint={t("performance.hintTinyOnLaunch")} more={t("performance.hintTinySize")} checked={settings.tinyOnLaunch} onChange={(tinyOnLaunch) => set.mutate({ tinyOnLaunch })} />
+          <>
           <div className="setting">
             <div className="setting-text">
               <p className="font-medium">{t("performance.tinySize")}</p>
@@ -175,6 +179,7 @@ export function PerformanceView({ settings }: { settings: Settings }) {
               <NumberField unit={t("performance.tinyHeight")} short="px" min={16} max={4320} value={settings.microHeight} onCommit={(microHeight) => set.mutate({ microHeight })} />
             </div>
           </div>
+          </>
           <div className="pt-3.5">
             <button className="btn btn-ghost" aria-expanded={more} onClick={() => setMore(!more)}>
               {more ? t("performance.fewerSettings") : t("performance.moreSettings")}
@@ -206,14 +211,14 @@ export function PerformanceView({ settings }: { settings: Settings }) {
                   />
                 </div>
               </Row>
-              <Row title={t("settings.trim")} hint={t("settings.trimHint")}>
+              {!IS_MAC && <Row title={t("settings.trim")} hint={t("settings.trimHint")}>
                 <NumberField unit={t("settings.unit.minutesOff")} short={t("settings.unit.min")} min={0} max={1440} value={settings.trimEveryMin} onCommit={(trimEveryMin) => set.mutate({ trimEveryMin })} />
-              </Row>
-              <Row title={t("settings.spread")} hint={t("settings.spreadHint")}>
+              </Row>}
+              {!IS_MAC && <Row title={t("settings.spread")} hint={t("settings.spreadHint")}>
                 <Switch label={t("settings.spread")} checked={settings.autoSpread} onChange={(autoSpread) => set.mutate({ autoSpread })} />
-              </Row>
+              </Row>}
               <Row title={t("settings.adaptive")} hint={t("settings.adaptiveHint")}>
-                <Switch label={t("settings.adaptive")} checked={settings.adaptive.enabled} onChange={(enabled) => set.mutate({ adaptive: { ...settings.adaptive, enabled } })} />
+                <Switch label={t("settings.adaptive")} checked={settings.adaptive.enabled} onChange={(enabled) => set.mutate({ adaptive: { ...settings.adaptive, background, enabled } })} />
               </Row>
               {settings.adaptive.enabled && (
                 <Row title={t("settings.inBackground")} hint={t("settings.adaptiveBgHint")}>
@@ -230,22 +235,22 @@ export function PerformanceView({ settings }: { settings: Settings }) {
                       <Switch
                         label={t("settings.adaptiveBgEco")}
                         checked={settings.adaptive.background.eco}
-                        onChange={(eco) => set.mutate({ adaptive: { ...settings.adaptive, background: { ...settings.adaptive.background, eco } } })}
+                        onChange={(eco) => set.mutate({ adaptive: { ...settings.adaptive, background: { ...background, eco } } })}
                       />
                     </label>
-                    <Segmented
+                    {!IS_MAC && <Segmented
                       mono
                       label={t("settings.adaptiveBgTrim")}
                       value={settings.adaptive.background.trimEveryMin ?? -1}
                       options={[-1, 0, 5, 15, 30, 60].map((m) => ({ value: m, label: m < 0 ? t("common.default") : m ? t("settings.minutesShort", { n: m }) : t("common.off") }))}
                       onChange={(m) => set.mutate({ adaptive: { ...settings.adaptive, background: { ...settings.adaptive.background, trimEveryMin: m < 0 ? null : m } } })}
-                    />
+                    />}
                   </div>
                 </Row>
               )}
-              <h3 id="perf-network" className="font-semibold pt-5">{t("performance.section.network")}</h3>
-              <BandwidthRow />
-              <h3 id="perf-roalt" className="font-semibold pt-5">{t("performance.section.roalt")}</h3>
+              {!IS_MAC && <h3 id="perf-network" className="font-semibold pt-5">{t("performance.section.network")}</h3>}
+              {!IS_MAC && <BandwidthRow />}
+              {!IS_MAC && <h3 id="perf-roalt" className="font-semibold pt-5">{t("performance.section.roalt")}</h3>}
               <Row title={t("dashboard.previewFps")} hint={t("dashboard.previewFpsHint")}>
                 <Segmented mono label={t("dashboard.previewFps")} value={previewFps} options={PREVIEW_FPS.map((f) => ({ value: f, label: t("dashboard.fps", { fps: f }) }))} onChange={setFps} />
               </Row>
@@ -263,7 +268,7 @@ export function PerformanceView({ settings }: { settings: Settings }) {
 const noThrottle = { mb: 0, cpuCap: 10 };
 const lightest: RenderFlags = { msaa: "x1", texture: "lowest", mode: "default", graySky: false, noGrass: true, lowestFrm: true };
 /** One-click setups: a profile each, reviewed like any other. */
-const PRESETS: readonly { label: Key; tag: Key; facts: () => string[]; profile: Profile }[] = [
+const WINDOWS_PRESETS: readonly { label: Key; tag: Key; facts: () => string[]; profile: Profile }[] = [
   {
     label: "performance.preset.maxAlts",
     tag: "performance.tagMaxAlts",
@@ -292,6 +297,13 @@ const PRESETS: readonly { label: Key; tag: Key; facts: () => string[]; profile: 
     },
   },
 ];
+
+const PRESETS = IS_MAC ? WINDOWS_PRESETS.map((preset) => ({
+  ...preset,
+  facts: () => [preset.profile.fpsCap ? `${preset.profile.fpsCap} FPS` : "Roblox FPS setting", preset.profile.lowGraphics ? "Low graphics" : "Your graphics settings", preset.profile.adaptive?.enabled ? "Cooperative CPU cap + background priority" : "Normal scheduling priority"],
+  profile: { ...preset.profile, previewFps: 5 as const, lighterRendering: false, trimEveryMin: 0, autoSpread: false,
+    adaptive: { enabled: preset.profile.adaptive?.enabled ?? false, background: { cpuCap: preset.profile.adaptive?.background.cpuCap ?? null, eco: true, trimEveryMin: null, affinity: null } } },
+})) : WINDOWS_PRESETS;
 
 /** Every setting the profile names is already so. */
 function isApplied(profile: Profile, settings: Settings) {

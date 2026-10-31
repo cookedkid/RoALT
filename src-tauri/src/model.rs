@@ -428,7 +428,7 @@ pub struct Adaptive {
 
 impl Default for Adaptive {
     fn default() -> Self {
-        Self { enabled: false, background: Limits { cpu_cap: Some(25), eco: true, ..Limits::default() } }
+        Self { enabled: false, background: Limits { cpu_cap: if cfg!(windows) { Some(25) } else { None }, eco: true, ..Limits::default() } }
     }
 }
 
@@ -462,14 +462,14 @@ impl Default for Settings {
             anti_afk: AntiAfk::default(),
             discord: DiscordEvents::default(),
             auto_update: false,
-            self_update: true,
+            self_update: cfg!(windows),
             discord_presence: true,
             minimize_on_launch: false,
             panic_hotkey: String::new(),
             clean_logs: false,
             fps_cap: 0,
             low_graphics: true,
-            lighter_rendering: true,
+            lighter_rendering: cfg!(windows),
             render_flags: RenderFlags::default(),
             park_minimized: false,
             micro_width: 320,
@@ -892,6 +892,7 @@ pub struct Limits {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct SystemUsage {
+    pub gpu_pct: Option<f64>,
     /// Of all cores; None on the first sample, which has nothing to compare with.
     pub cpu_pct: Option<f64>,
     pub mem_used_mb: f64,

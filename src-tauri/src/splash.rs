@@ -9,7 +9,9 @@ use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, LogicalSize, Manager, PhysicalPosition, PhysicalSize, WebviewWindow};
 use tauri_plugin_window_state::{StateFlags, WindowExt};
+#[cfg(windows)]
 use windows::Win32::Foundation::HWND;
+#[cfg(windows)]
 use windows::Win32::UI::WindowsAndMessaging::{SWP_NOACTIVATE, SWP_NOZORDER, SetWindowPos};
 
 const SPLASH: (f64, f64) = (440.0, 300.0);
@@ -119,6 +121,8 @@ fn grow(app: &AppHandle, fallback: bool) {
             target.rect
         }
     };
+    #[cfg(windows)]
+    {
     // Tauri's HWND comes from its own `windows` version.
     let hwnd = w.hwnd().map(|h| HWND(h.0 as _)).inspect_err(|e| log::debug!("splash: no hwnd: {e}"));
     if let Ok(hwnd) = hwnd {
@@ -141,6 +145,19 @@ fn grow(app: &AppHandle, fallback: bool) {
         }
         if let Err(e) = w.set_position(PhysicalPosition::new(r.x, r.y)) {
             log::warn!("splash: could not place the window: {e}");
+        }
+    }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let start = Instant::now();
+        loop {
+            let t = (start.elapsed().as_secs_f64() / GROW.as_secs_f64()).min(1.0);
+            let r = lerp(from, target.rect, t);
+            let _ = w.set_size(PhysicalSize::new(r.w as u32, r.h as u32));
+            let _ = w.set_position(PhysicalPosition::new(r.x, r.y));
+            if t >= 1.0 {break;}
+            sleep(FRAME);
         }
     }
     settle(&w, target.maximized);

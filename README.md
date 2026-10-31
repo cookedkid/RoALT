@@ -2,17 +2,15 @@
 
 # RoALT
 
-### Every Roblox account you own, signed in, checked and one click from any game.
+### macOS port of the RoALT Roblox account manager
 
-A fast, local-only account manager and multi-client launcher for Windows.<br>
-Your cookies stay encrypted on your PC. Nothing is sent anywhere except Roblox.
+A native Apple Silicon build with the original React interface and a macOS backend.<br>
+This is an in-progress port of [inspectsoftware/RoALT](https://github.com/inspectsoftware/RoALT), not a one-to-one Windows feature replacement yet.
 
-[![Latest release](https://img.shields.io/github/v/release/inspectsoftware/RoALT?style=for-the-badge&color=b4f000&labelColor=1a1a1a&label=release)](https://github.com/inspectsoftware/RoALT/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/inspectsoftware/RoALT/total?style=for-the-badge&color=2b2b2b&labelColor=1a1a1a)](https://github.com/inspectsoftware/RoALT/releases)
-[![Windows 10 | 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078d4?style=for-the-badge&logo=windows&labelColor=1a1a1a)](#-install)
+[![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon-b4f000?style=for-the-badge&logo=apple&labelColor=1a1a1a)](#macos-port-status)
+[![Windows upstream](https://img.shields.io/badge/Windows-upstream-0078d4?style=for-the-badge&logo=windows&labelColor=1a1a1a)](https://github.com/inspectsoftware/RoALT)
 [![Discord](https://img.shields.io/badge/Discord-join-5865f2?style=for-the-badge&logo=discord&logoColor=white&labelColor=1a1a1a)](https://discord.gg/qcj68tHKCX)
 
-[![CI](https://img.shields.io/github/actions/workflow/status/inspectsoftware/RoALT/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/inspectsoftware/RoALT/actions/workflows/ci.yml)
 ![Tauri 2](https://img.shields.io/badge/Tauri-2-24c8db?style=flat-square&logo=tauri&logoColor=white)
 ![Rust](https://img.shields.io/badge/Rust-2024-dea584?style=flat-square&logo=rust&logoColor=white)
 ![React 19](https://img.shields.io/badge/React-19-61dafb?style=flat-square&logo=react&logoColor=white)
@@ -20,7 +18,7 @@ Your cookies stay encrypted on your PC. Nothing is sent anywhere except Roblox.
 
 <br>
 
-[**⬇ Download**](https://github.com/inspectsoftware/RoALT/releases/latest) &nbsp;·&nbsp;
+[**⬇ Build for macOS**](docs/MACOS_PORT.md#build-and-install) &nbsp;·&nbsp;
 [**💬 Discord**](https://discord.gg/qcj68tHKCX) &nbsp;·&nbsp;
 [Quick start](#-quick-start) &nbsp;·&nbsp;
 [Privacy](#-safety-and-privacy) &nbsp;·&nbsp;
@@ -34,11 +32,33 @@ Your cookies stay encrypted on your PC. Nothing is sent anywhere except Roblox.
 
 <br>
 
+## macOS port status
+
+This repository contains an **Apple Silicon macOS port in progress**. The interface is based on the original RoALT UI. The Windows descriptions below document the upstream app; use this table for the current Mac implementation. See [the macOS port notes](docs/MACOS_PORT.md) for behavior, limits, validation and installation details.
+
+| Area | macOS status |
+|---|---|
+| Accounts, Roblox API, encrypted vault, master password, recovery, backups | Ported. Keychain replaces Windows DPAPI; Touch ID replaces Windows Hello where available. |
+| Multi-instance launch, batches, account launch, shared sign-in protection | Ported with native macOS process launch and a child sandbox. Two test clients ran together; authenticated simultaneous game joins still need user acceptance testing. |
+| CPU and memory monitoring, background priority, FPS/graphics settings | Ported with macOS system APIs and Roblox's own settings. Cooperative CPU caps can stutter; they are not kernel quotas. |
+| Window focus, minimize/restore, tiling, tiny windows, live previews | Ported. Accessibility and Screen Recording approval is required. Mac previews use 2/5/10 FPS rather than Windows' 15/30/60 FPS. |
+| Anti-AFK | Focus-mode Space input is ported and opt-in. It needs Accessibility and Input Monitoring. Actual in-game kick prevention is not yet verified. Background/minimized anti-AFK is not available. |
+| Core affinity/spreading, memory trimming, bandwidth shaping, GPU counters | Not ported. macOS does not provide equivalent supported controls or reliable counters for these implementations. |
+| Scheduled shutdown, network classification, automatic Roblox/RoALT installers and updates | Not ported. Related controls are hidden or rejected on Mac. |
+| Distribution | Local ad-hoc signed Apple Silicon app build. No Developer ID notarization, universal/Intel build, or Mac GitHub release yet. |
+
+On first launch, the Mac app requests missing Screen Recording, Input Monitoring, event-posting and Accessibility access. You must approve macOS prompts yourself and restart the app after granting access. If you decline, grant access later in System Settings → Privacy & Security.
+
+**The feature catalogue below describes the original Windows version unless the table above or the [Mac notes](docs/MACOS_PORT.md) says it is available on macOS.**
+
+<br>
+
 ## 📑 Contents
 
 | For everyone | For developers |
 |---|---|
-| [What is RoALT?](#-what-is-roalt) | [Architecture](#-architecture) |
+| [macOS port status](#macos-port-status) | [Architecture](#-architecture) |
+| [What is RoALT?](#-what-is-roalt) | [Mac port notes](docs/MACOS_PORT.md) |
 | [Features](#-features) | [Tech stack](#-tech-stack) |
 | [Install](#-install) | [Build from source](#-build-from-source) |
 | [Quick start](#-quick-start) | [Project layout](#-project-layout) |
@@ -226,6 +246,12 @@ background image, and skip the splash screen if you'd rather not wait.
 <br>
 
 ## 📥 Install
+
+### macOS (Apple Silicon port)
+
+There is no macOS GitHub release yet. Build the `.app` from this repository using the [macOS build instructions](docs/MACOS_PORT.md#build-and-install). The app is ad-hoc signed, so macOS may ask for Keychain approval after rebuilding. It is not notarized; Intel and universal builds have not been tested.
+
+### Windows (original upstream app)
 
 1. Download **`RoALT-Setup-<version>.exe`** from the [latest release](https://github.com/inspectsoftware/RoALT/releases/latest).
 2. Run it. No admin rights needed; it installs to `%LOCALAPPDATA%\Programs\RoALT`.

@@ -1,0 +1,3 @@
+{
+ "bundle": {"active": true, "targets": ["app"], "macOS": {"minimumSystemVersion": "11.0"}}
+}

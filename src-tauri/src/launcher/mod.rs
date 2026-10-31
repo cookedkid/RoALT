@@ -2,12 +2,21 @@
 //! resolve the target with that account's cookie, get an authentication ticket, build the
 //! `roblox-player:` URI and start the client. Tickets and URIs are secrets: never logged.
 
+#[cfg(windows)]
 pub mod authenticode;
 pub mod bulk;
+#[cfg(windows)]
+pub mod client;
+#[cfg(target_os = "macos")]
+#[path = "macos/client.rs"]
 pub mod client;
 pub mod client_settings;
 pub mod flags;
 pub mod target;
+#[cfg(windows)]
+pub mod update;
+#[cfg(target_os = "macos")]
+#[path = "macos/update.rs"]
 pub mod update;
 pub mod uri;
 
@@ -127,6 +136,13 @@ pub fn launch_args(text: &str) -> Result<Vec<String>> {
     if args.iter().any(|a| a.to_ascii_lowercase().starts_with("roblox-player:")) {
         return invalid(tr!("Launch arguments can't contain another roblox-player: link."));
     }
+    #[cfg(target_os = "macos")]
+    if args.iter().any(|arg| {
+        let name = arg.trim_start_matches(['-', '/']).split(['=', ':']).next().unwrap_or("");
+        ["protocolString", "authenticationTicket", "authenticationUrl", "joinScriptUrl"].iter().any(|reserved| name.eq_ignore_ascii_case(reserved))
+    }) {
+        return invalid("Authentication and protocol arguments are reserved for the account launcher.".into());
+    }
     Ok(args)
 }
 
@@ -167,7 +183,7 @@ pub async fn launch(s: &App, account_id: i64, target: &LaunchTarget, fps_cap: Op
     let account = s.db.account(account_id)?;
     let fps = fps_cap.or(account.fps_cap).unwrap_or(settings.fps_cap);
     let undo = client_settings::apply(&s.db, fps, settings.low_graphics && !account.full_quality);
-    let flags = match (settings.lighter_rendering && !account.full_quality, exe.bootstrapper) {
+    let flags = match (cfg!(windows) && settings.lighter_rendering && !account.full_quality, exe.bootstrapper) {
         (false, _) => None,
         (true, true) => {
             log::info!("lighter rendering skipped for account {account_id}: a bootstrapper manages Roblox's flags");
@@ -185,7 +201,10 @@ pub async fn launch(s: &App, account_id: i64, target: &LaunchTarget, fps_cap: Op
         }
     };
     let since = std::time::SystemTime::now();
+    #[cfg(windows)]
     let started = client::start(&exe, &uri::player_uri(&ticket, started_at, &place, production), &args);
+    #[cfg(target_os = "macos")]
+    let started = client::start(&exe, &uri::player_uri(&ticket, started_at, &place, production), &args, settings.multi_instance, settings.protect_shared_login);
     match &started {
         Ok((pid, pid_start)) if waiting => {
             // A bootstrapper's own process exits by design: only the log tells then.

@@ -3621,11 +3621,13 @@ version = "0.7.0"
 dependencies = [
  "aes-gcm",
  "argon2",
+ "cc",
  "getrandom 0.4.3",
  "log",
  "reqwest",
  "rusqlite",
  "rusqlite_migration",
+ "security-framework",
  "serde",
  "serde_json",
  "tauri",

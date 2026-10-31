@@ -11,7 +11,15 @@
 //! Switching mode only re-wraps the data key.
 
 pub mod backup;
+#[cfg(windows)]
 mod dpapi;
+#[cfg(target_os = "macos")]
+#[path = "keychain.rs"]
+mod dpapi;
+#[cfg(windows)]
+mod hello;
+#[cfg(target_os = "macos")]
+#[path = "touch_id.rs"]
 mod hello;
 pub mod master;
 

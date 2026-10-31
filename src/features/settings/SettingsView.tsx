@@ -433,7 +433,7 @@ export function SettingsView({ vault, settings, onPerformance, onRecoveryCode }:
             {SHORTCUTS.map(([what, key]) => (
               <tr key={key} className="h-10 border-b border-line">
                 <td>{t(what)}</td>
-                <td className="text-right"><span className="kbd">{key}</span></td>
+                <td className="text-right"><span className="kbd">{navigator.platform.startsWith("Mac") ? key.replace("Ctrl", "⌘") : key}</span></td>
               </tr>
             ))}
           </tbody>

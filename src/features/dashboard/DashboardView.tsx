@@ -27,6 +27,7 @@ function useThumbnail(id: string, canvas: React.RefObject<HTMLCanvasElement | nu
   const [shown, setShown] = useState<boolean | null>(null);
   const [painted, setPainted] = useState(false);
   const [parked, setParked] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let stop = false;
     let timer: number | undefined;
@@ -37,12 +38,14 @@ function useThumbnail(id: string, canvas: React.RefObject<HTMLCanvasElement | nu
     if (canvas.current) seen.observe(canvas.current);
     const tick = async () => {
       const started = performance.now();
+      let failed = false;
       const el = canvas.current;
       const visible = document.visibilityState === "visible" && inView;
       if (el && visible) {
         try {
           const buf = await api.instanceThumbnail(id, Math.min(480, Math.max(160, Math.round(el.clientWidth * devicePixelRatio))));
           if (stop) return;
+          setError(null);
           if (buf.byteLength < 12) {
             setShown(false);
             setParked(false);
@@ -57,11 +60,12 @@ function useThumbnail(id: string, canvas: React.RefObject<HTMLCanvasElement | nu
             setPainted(true);
             setParked(head.getUint32(8, true) === 1);
           }
-        } catch {
-          // Ended or not started: the card goes with the next instances list.
+        } catch (e) {
+          failed = true;
+          if (!stop) setError(typeof e === "object" && e !== null && "message" in e ? String(e.message) : "Preview unavailable");
         }
       }
-      if (!stop) timer = window.setTimeout(tick, visible ? Math.max(0, every - (performance.now() - started)) : HIDDEN_MS);
+      if (!stop) timer = window.setTimeout(tick, failed ? 5000 : visible ? Math.max(0, every - (performance.now() - started)) : HIDDEN_MS);
     };
     void tick();
     return () => {
@@ -70,7 +74,7 @@ function useThumbnail(id: string, canvas: React.RefObject<HTMLCanvasElement | nu
       seen.disconnect();
     };
   }, [id, canvas, fps]);
-  return { shown, painted, parked };
+  return { shown, painted, parked, error };
 }
 
 /** `beside`: the left edge of the key that opened it. The menu opens left of that, not over it,
@@ -98,7 +102,7 @@ function ClientCard({ inst: i, account: a, metrics: m, now, afkOn, fps, closing,
   onMenu: (at: MenuAt) => void;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
-  const { shown, painted, parked } = useThumbnail(i.id, canvas, fps);
+  const { shown, painted, parked, error } = useThumbnail(i.id, canvas, fps);
   // No window to show or minimize yet.
   const noWindow = !shown && i.state === "starting";
   const hidden = !noWindow && (shown === false || parked);
@@ -148,7 +152,8 @@ function ClientCard({ inst: i, account: a, metrics: m, now, afkOn, fps, closing,
       <div className="bezel">
         <div className="relative aspect-video overflow-hidden rounded-[9px]">
           <canvas ref={canvas} aria-hidden="true" className={`w-full h-full object-contain ${shown || painted ? "" : "invisible"} ${shown === false ? "opacity-50" : ""}`} />
-          {!shown && !painted && (
+          {error && <span role="status" className="absolute inset-0 grid place-items-center p-4 text-xs text-dim bg-panel">{error}</span>}
+          {!error && !shown && !painted && (
             <span className="absolute inset-0 grid place-items-center text-xs text-dim">
               {shown === false ? (i.state === "starting" ? t("dashboard.starting") : t("dashboard.minimized")) : ""}
             </span>
@@ -364,7 +369,7 @@ function Dial({ value, label, hint, text }: { value: number | null; label: strin
 function PcPanel({ metrics }: { metrics: ClientMetrics[] }) {
   const sys = useSystemUsage(true).data ?? null;
   const memPct = sys ? (sys.memUsedMb / Math.max(1, sys.memTotalMb)) * 100 : null;
-  const gpu = metrics.some((m) => m.gpuPct !== null) ? metrics.reduce((n, m) => n + (m.gpuPct ?? 0), 0) : null;
+  const gpu = sys?.gpuPct ?? (metrics.some((m) => m.gpuPct !== null) ? metrics.reduce((n, m) => n + (m.gpuPct ?? 0), 0) : null);
   const worst = Math.max(sys?.cpuPct ?? 0, memPct ?? 0, gpu ?? 0);
   const [verdict, color] = worst < 60
     ? [t("home.plenty"), "var(--accent-text)"]
@@ -382,7 +387,7 @@ function PcPanel({ metrics }: { metrics: ClientMetrics[] }) {
       </div>
       <Dial value={sys?.cpuPct ?? null} label={t("home.cpu")} hint={t("home.wholePc")} />
       <Dial value={memPct} label={t("home.memory")} hint={sys ? t("home.memOf", { used: mb(sys.memUsedMb), total: mb(sys.memTotalMb) }) : t("home.wholePc")} />
-      <Dial value={gpu} label={t("home.gpu")} hint={t("home.allClients")} />
+      <Dial value={gpu} label={t("home.gpu")} hint={sys?.gpuPct != null ? t("home.wholePc") : t("home.allClients")} />
     </section>
   );
 }

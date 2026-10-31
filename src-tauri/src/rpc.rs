@@ -5,7 +5,10 @@
 //! frame is an opcode and a length (u32 LE each), then JSON. Nothing goes over the network from
 //! RoALT, and nothing happens while Discord isn't running (the pipe is retried every tick).
 
-use std::fs::{File, OpenOptions};
+#[cfg(windows)]
+use std::fs::{File as Pipe, OpenOptions};
+#[cfg(target_os = "macos")]
+use std::os::unix::net::UnixStream as Pipe;
 use std::io::{Read, Write};
 use std::time::Duration;
 
@@ -38,7 +41,7 @@ fn frame(op: u32, body: &Value) -> Vec<u8> {
 }
 
 /// Reads one frame's opcode and JSON; a CLOSE (or anything unreadable) is an error.
-fn read_frame(pipe: &mut File) -> std::io::Result<(u32, Value)> {
+fn read_frame(pipe: &mut Pipe) -> std::io::Result<(u32, Value)> {
     let mut head = [0u8; 8];
     pipe.read_exact(&mut head)?;
     let op = u32::from_le_bytes(head[..4].try_into().unwrap());
@@ -59,9 +62,32 @@ fn read_frame(pipe: &mut File) -> std::io::Result<(u32, Value)> {
 }
 
 /// The first Discord pipe that takes our handshake.
-fn connect() -> Option<File> {
+#[cfg(windows)]
+fn open_pipe(n: u32) -> Option<Pipe> {
+    OpenOptions::new().read(true).write(true).open(format!(r"\\.\pipe\discord-ipc-{n}")).ok()
+}
+#[cfg(target_os = "macos")]
+fn open_pipe(n: u32) -> Option<Pipe> {
+    use std::os::unix::fs::MetadataExt;
+    let roots = ["XDG_RUNTIME_DIR", "TMPDIR", "TMP", "TEMP"].into_iter()
+        .filter_map(std::env::var_os).map(std::path::PathBuf::from)
+        .chain([std::path::PathBuf::from("/tmp")]);
+    for root in roots {
+        let path = root.join(format!("discord-ipc-{n}"));
+        let Ok(info) = std::fs::symlink_metadata(&path) else { continue };
+        unsafe extern "C" { fn getuid() -> u32; }
+        if info.uid() != unsafe { getuid() } { continue; }
+        if let Ok(socket) = Pipe::connect(path) {
+            socket.set_read_timeout(Some(Duration::from_secs(2))).ok()?;
+            socket.set_write_timeout(Some(Duration::from_secs(2))).ok()?;
+            return Some(socket);
+        }
+    }
+    None
+}
+fn connect() -> Option<Pipe> {
     (0..10).find_map(|n| {
-        let mut pipe = OpenOptions::new().read(true).write(true).open(format!(r"\\.\pipe\discord-ipc-{n}")).ok()?;
+        let mut pipe = open_pipe(n)?;
         let shook = pipe
             .write_all(&frame(HANDSHAKE, &json!({ "v": 1, "client_id": CLIENT_ID })))
             .and_then(|()| read_frame(&mut pipe));
@@ -74,7 +100,7 @@ fn connect() -> Option<File> {
 }
 
 /// Sets (or, with `Value::Null`, clears) the activity and reads Discord's answer.
-fn send(pipe: &mut File, activity: &Value, nonce: u64) -> std::io::Result<()> {
+fn send(pipe: &mut Pipe, activity: &Value, nonce: u64) -> std::io::Result<()> {
     let cmd = json!({
         "cmd": "SET_ACTIVITY",
         "args": { "pid": std::process::id(), "activity": activity },
@@ -139,7 +165,7 @@ fn activity((details, state): &(String, String), since_ms: i64) -> Value {
 /// Keeps the presence in step on its own thread (pipe I/O blocks).
 pub fn spawn(app: AppHandle) {
     std::thread::spawn(move || {
-        let mut pipe: Option<File> = None;
+        let mut pipe: Option<Pipe> = None;
         // What Discord shows now: None when cleared or not connected.
         let mut shown: Option<(String, String)> = None;
         let mut since = now_ms();

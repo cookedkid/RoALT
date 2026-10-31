@@ -238,6 +238,7 @@ mod tests {
         assert_eq!((v.get(MODES[0]), v[MODES[2]].as_str()), (None, Some("True")));
     }
 
+    #[cfg(windows)]
     #[test]
     fn puts_the_file_back_exactly() {
         let dir = std::env::temp_dir().join(format!("roalt-test-flags-{}", std::process::id()));
