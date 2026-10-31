@@ -1,0 +1,65 @@
+name: macOS preview release
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [macos-release]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-preview-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify native Apple Silicon runner
+        run: test "$(uname -m)" = arm64
+      - run: npm ci
+      - run: npm run build
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - run: npm run tauri -- build --bundles app
+      - name: Package and verify
+        run: |
+          set -euo pipefail
+          app=src-tauri/target/release/bundle/macos/RoALT.app
+          codesign --force --deep --sign - --identifier com.inspectsoftware.roalt "$app"
+          codesign --verify --deep --strict "$app"
+          mkdir -p release-macos
+          ditto -c -k --sequesterRsrc --keepParent "$app" release-macos/RoALT-macOS-Apple-Silicon.zip
+          cp docs/MACOS_PORT.md release-macos/MACOS_README.md
+          cd release-macos
+          shasum -a 256 RoALT-macOS-Apple-Silicon.zip > SHA256SUMS.txt
+          unzip -t RoALT-macOS-Apple-Silicon.zip
+      - name: Publish Mac preview download
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          version=$(node -p 'require("./package.json").version')
+          tag="macos-preview-${version}-${GITHUB_RUN_NUMBER}"
+          cat > release-notes.md <<'NOTES'
+          Apple Silicon macOS preview. Download RoALT-macOS-Apple-Silicon.zip, unzip it, and drag RoALT.app into Applications.
+
+          This app is ad-hoc signed, not Developer ID signed or notarized. macOS may require approval to open the app and access Keychain. Grant Accessibility, Screen Recording and Input Monitoring when needed.
+
+          Background anti-AFK is experimental: sending an event does not prove Roblox counted it or prevented an idle kick. See MACOS_README.md for supported features and limitations. Intel Macs are not supported by this build.
+          NOTES
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag already exists; leaving its assets unchanged."
+          else
+            gh release create "$tag" release-macos/* --target "$GITHUB_SHA" --prerelease --title "RoALT $version — macOS preview" --notes-file release-notes.md
+          fi

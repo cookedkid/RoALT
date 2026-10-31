@@ -1,3 +1,4 @@
+import { MacOptions } from "./MacOptions";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { open as openFile, save as saveFile } from "@tauri-apps/plugin-dialog";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
@@ -141,6 +142,7 @@ export function PerformanceView({ settings }: { settings: Settings }) {
           <p className="page-sub">{t("performance.intro")}</p>
         </header>
 
+        {IS_MAC && <MacOptions />}
         <section aria-label={t("performance.presets")} className="grid gap-6" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(250px, 100%), 1fr))" }}>
           {PRESETS.map((p) => (
             <button key={p.label} className="btn preset" aria-pressed={p === active} aria-haspopup="dialog" onClick={() => Date.now() - closedAt.current > 400 && setIncoming(p.profile)}>
@@ -222,6 +224,7 @@ export function PerformanceView({ settings }: { settings: Settings }) {
               </Row>
               {settings.adaptive.enabled && (
                 <Row title={t("settings.inBackground")} hint={t("settings.adaptiveBgHint")}>
+                  {IS_MAC && <button className="btn btn-sm" onClick={() => set.mutate({ adaptive: { ...settings.adaptive, background: { cpuCap: null, eco: true, trimEveryMin: null, affinity: null } } })}>Use efficiency mode only (no pauses)</button>}
                   <div className="flex flex-wrap items-center gap-3">
                     <Segmented
                       mono

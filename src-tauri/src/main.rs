@@ -3,6 +3,9 @@
 #[macro_use]
 mod i18n;
 mod commands;
+#[cfg(target_os = "macos")]
+#[path = "macos/options.rs"]
+mod mac_options;
 mod diagnostics;
 mod discord;
 mod error;
@@ -585,6 +588,10 @@ fn main() {
         })
         .on_window_event(on_window_event)
         .invoke_handler(main_only(tauri::generate_handler![
+            #[cfg(target_os = "macos")]
+            mac_options::mac_options_get,
+            #[cfg(target_os = "macos")]
+            mac_options::mac_options_set,
             commands::vault_status,
             commands::vault_unlock,
             commands::vault_lock,

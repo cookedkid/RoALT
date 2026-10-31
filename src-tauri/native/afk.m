@@ -34,7 +34,8 @@ int ro_afk_ready(void){
  int result=input_tap?0:-2;pthread_mutex_unlock(&setup_lock);return result;
 }
 static BOOL same(int pid,uint64_t start){struct proc_bsdinfo b={0};return proc_pidinfo(pid,PROC_PIDTBSDINFO,0,&b,sizeof(b))==sizeof(b)&&b.pbi_uid==getuid()&&b.pbi_start_tvsec==start;}
-int ro_afk_press_mode(int pid,uint64_t start,bool background){@autoreleasepool{
+int ro_afk_press_mode(int pid,uint64_t start,bool background,int keycode){@autoreleasepool{
+ if(keycode!=48&&keycode!=49)return -3;
  if(!same(pid,start))return 2;if(ro_afk_ready()!=0)return -2;uint64_t before=atomic_load(&last_input);if(now_ns()-before<5000000000ULL||!CGEventTapIsEnabled(input_tap))return 1;if(!same(pid,start))return 2;
  NSRunningApplication *previous=nil;
  if(!background){
@@ -43,8 +44,8 @@ int ro_afk_press_mode(int pid,uint64_t start,bool background){@autoreleasepool{
  previous=NSWorkspace.sharedWorkspace.frontmostApplication;NSRunningApplication *target=[NSRunningApplication runningApplicationWithProcessIdentifier:pid];if(!target||target.hidden)return 2;if(atomic_load(&last_input)!=before||![target activateWithOptions:NSApplicationActivateIgnoringOtherApps])return 1;
  usleep(50000);if(atomic_load(&last_input)!=before||NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier!=pid||!same(pid,start))return 1;
  }
- CGKeyCode key=background?48:49;
- CGEventSourceRef source=CGEventSourceCreate(kCGEventSourceStatePrivate);CGEventRef down=CGEventCreateKeyboardEvent(source,key,true),up=CGEventCreateKeyboardEvent(source,key,false);if(source)CFRelease(source);if(!down||!up){if(down)CFRelease(down);if(up)CFRelease(up);return -1;}
+ CGKeyCode key=(CGKeyCode)keycode;
+ CGEventSourceRef source=CGEventSourceCreate(kCGEventSourceStatePrivate);if(!source)return -1;CGEventRef down=CGEventCreateKeyboardEvent(source,key,true),up=CGEventCreateKeyboardEvent(source,key,false);if(source)CFRelease(source);if(!down||!up){if(down)CFRelease(down);if(up)CFRelease(up);return -1;}
  CGEventSetIntegerValueField(down,kCGEventSourceUserData,marker);CGEventSetIntegerValueField(up,kCGEventSourceUserData,marker);
  // Both edges target the verified client PID, never whichever app happens to be frontmost.
  if(atomic_load(&last_input)!=before||!same(pid,start)){CFRelease(down);CFRelease(up);return 1;}

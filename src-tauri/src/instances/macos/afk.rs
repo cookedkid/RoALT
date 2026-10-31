@@ -13,7 +13,7 @@ pub struct AfkClient {
 }
 unsafe extern "C" {
     fn ro_afk_ready() -> i32;
-    fn ro_afk_press_mode(pid: i32, start: u64, background: bool) -> i32;
+    fn ro_afk_press_mode(pid: i32, start: u64, background: bool, keycode: i32) -> i32;
 }
 pub fn validate(_: AfkMode) -> Result<()> {
     if unsafe { ro_afk_ready() } != 0 {
@@ -32,6 +32,10 @@ pub fn spawn(app: AppHandle) {
                 if !v.anti_afk.enabled {
                     continue;
                 }
+                let options = match crate::mac_options::read(&crate::mac_options::options_dir(&s)) {
+                    Ok(options) => options,
+                    Err(e) => { log::warn!("Anti-AFK settings unavailable: {e}"); continue; }
+                };
                 let clients = s.tracker.clients();
                 let mut changed = false;
                 for c in s.tracker.afk_clients() {
@@ -55,7 +59,17 @@ pub fn spawn(app: AppHandle) {
                     {
                         continue;
                     }
-                    match unsafe { ro_afk_press_mode(*pid as i32, *start, v.anti_afk.mode == AfkMode::Background) } {
+                    let background = v.anti_afk.mode == AfkMode::Background;
+                    let mut result = unsafe { ro_afk_press_mode(*pid as i32, *start, background, i32::from(options.key_code)) };
+                    if should_fallback(background, options.focus_fallback, result) {
+                        log::warn!("Background anti-AFK event creation failed; using opted-in focus fallback for tracked PID {pid}");
+                        result = unsafe { ro_afk_press_mode(*pid as i32, *start, false, i32::from(options.key_code)) };
+                    }
+                    if result < 0 {
+                        log::warn!("Anti-AFK skipped tracked PID {pid}: {}", if result == -2 { "Accessibility or Input Monitoring access is missing" } else { "could not create input events" });
+                    }
+                    // Posting has no delivery receipt: this records an attempt, not game acceptance.
+                    match result {
                         0 => {
                             s.tracker.mark_afk(&c.id, now_ms());
                             changed = true;
@@ -76,6 +90,21 @@ mod tests {
     use super::*;
     #[test]
     fn stale_identity_never_injects_input() {
-        assert_eq!(unsafe { ro_afk_press_mode(std::process::id() as i32, 1,false) }, 2);
+        assert_eq!(unsafe { ro_afk_press_mode(std::process::id() as i32, 1,false,48) }, 2);
+    }
+}
+
+fn should_fallback(background: bool, allowed: bool, result: i32) -> bool {
+    background && allowed && result == -1
+}
+#[cfg(test)]
+mod fallback_tests {
+    use super::*;
+    #[test]
+    fn never_focus_for_missing_permission_activity_stale_pid_or_success() {
+        for result in [-3, -2, 0, 1, 2] { assert!(!should_fallback(true, true, result)); }
+        assert!(should_fallback(true, true, -1));
+        assert!(!should_fallback(true, false, -1));
+        assert!(!should_fallback(false, true, -1));
     }
 }

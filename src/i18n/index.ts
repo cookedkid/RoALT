@@ -66,17 +66,18 @@ export const getLang = () => lang;
 
 // Platform-specific security copy must describe the actual credential provider.
 const macCopy: Partial<Record<Key, string>> = {
+ "settings.antiAfkBackgroundHint": "Experimental: send the selected key directly to tracked Roblox processes without changing focus, including minimized clients. Skips recent human activity. Posting does not confirm game acceptance or prevent idle kicks reliably.",
  "settings.antiAfkHint": "Opt-in: briefly focus visible tracked clients and send Space while you are idle. Requires Accessibility and Input Monitoring in System Settings → Privacy & Security; restart RoALT after granting permissions.",
- "settings.antiAfkFocusHint": "After 5 seconds without keyboard or mouse activity, briefly focus each due client and send Space. Manual input interrupts the round. Minimized clients are skipped. Game acceptance is not guaranteed.",
+ "settings.antiAfkFocusHint": "After 5 seconds without keyboard or mouse activity, briefly focus each due client and send the selected key. Manual input interrupts the round. Minimized clients are skipped. Game acceptance is not guaranteed.",
  "dashboard.previewFpsHint": "Window-only captures require Screen Recording permission. Lower rates save CPU. Minimized windows have no live preview.",
  "launch.limits.cpu": "Cooperative CPU cap (% of whole Mac)",
  "settings.multiHint": "Launch separate macOS Roblox clients directly. Existing clients keep running; no Roblox executable is modified.",
  "settings.protectLoginHint": "New Roblox clients cannot read or write shared native cookie stores. Each client uses its own launch ticket; existing clients are unchanged. This does not isolate all Roblox preferences or logs.",
  "launch.multi.takeOverText": "Enable separate Roblox launches on macOS. Existing clients are left running and unchanged.",
- "settings.efficiency": "Background priority",
+ "settings.efficiency": "Efficiency mode (background priority)",
  "settings.adaptiveBgEco": "Lower background CPU and I/O priority",
  "settings.adaptiveBgHint": "Apply cooperative CPU caps and background scheduling priority while a client is not in front.",
- "launch.limits.eco": "Background priority",
+ "launch.limits.eco": "Efficiency mode (background priority)",
  "launch.limits.help": "CPU cap is a percentage of total Mac CPU capacity, enforced by brief process pauses. It may stutter and is not a kernel quota. A separate guardian resumes clients if RoALT or the governor exits or stalls. Background priority lowers CPU and I/O scheduling priority.",
  "settings.memRestartHint": "Restart a client whose physical memory footprint stays over this value for 30 seconds. 0 turns it off.",
  "monitor.privateMemory": "Physical footprint",

@@ -1,6 +1,6 @@
 <div align="center">
 
-# RoALT for macOS
+# RoALT for macOS — 0.7.1
 
 ### A native Apple Silicon port of the Roblox account manager
 
@@ -20,11 +20,11 @@ This fork ports [inspectsoftware/RoALT](https://github.com/inspectsoftware/RoALT
 | Launch and multi-instance | Native Roblox launch, multiple clients, batches and shared sign-in protection are ported. Two test clients ran together, but simultaneous authenticated game joins still need user testing. |
 | Performance | CPU and memory monitoring, background priority, FPS and low graphics settings, and cooperative CPU caps are ported. CPU caps can cause stutter and are not kernel quotas. |
 | Windows and previews | Focus, minimize/restore, tiling, tiny windows and live previews are ported. Accessibility and Screen Recording permission are required. Preview rates are 2, 5 or 10 FPS. |
-| Anti-AFK | Opt-in focus mode sends Space to a visible tracked client after checking for recent human input. It requires Accessibility and Input Monitoring. Kick prevention in an actual game has not been verified. |
+| Anti-AFK | Opt-in focus and experimental background modes send configurable Tab/Space input to tracked clients. Background mode does not move or focus windows. Both skip recent human input. Game acceptance and 20-minute idle prevention still need manual testing. |
 
 ### Still missing or different from Windows
 
-- Background or minimized anti-AFK, kernel CPU quotas, core affinity and spreading, memory trimming, bandwidth shaping, and reliable GPU counters.
+- Background/minimized anti-AFK is implemented but unverified in Roblox. Kernel CPU quotas, core affinity/spreading, memory trimming, bandwidth shaping and per-client GPU/VRAM counters remain unsupported.
 - Scheduled shutdown, Windows-style public-network classification, and automatic Roblox or RoALT installation and updates.
 - A notarized Mac installer, Intel or universal build, and a downloadable Mac GitHub release.
 
@@ -32,7 +32,15 @@ Unsupported controls are hidden or rejected on macOS. See [the port notes](docs/
 
 ## Install on macOS
 
-**Apple Silicon only.** There is not yet a Mac download on GitHub Releases. For now, build and install the app from this repository. You need [Xcode Command Line Tools](https://developer.apple.com/xcode/resources/), Node.js 22 or newer, and Rust 1.95 or newer. After installing those prerequisites, paste this into Terminal:
+**Apple Silicon only.** One command builds and installs the latest source into `~/Applications` after checking your build tools:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/cookedkid/RoALT/main/scripts/install-macos.sh | bash
+```
+
+The script does not automatically install build tools or open RoALT. It verifies the app signature and preserves the previous app if replacement fails. You can read [the installer](scripts/install-macos.sh) before running it. This is a source build, not a prebuilt binary download. Mac preview ZIPs will appear in [Releases](https://github.com/cookedkid/RoALT/releases) after the [Mac release workflow](.github/workflows/macos-release.yml) completes successfully.
+
+For a manual source build, You need [Xcode Command Line Tools](https://developer.apple.com/xcode/resources/), Node.js 22 or newer, and Rust 1.95 or newer. After installing those prerequisites, paste this into Terminal:
 
 ```sh
 git clone https://github.com/cookedkid/RoALT.git
@@ -48,6 +56,10 @@ The build may take several minutes. The app is ad-hoc signed and not notarized. 
 
 A downloadable ZIP should be the normal install method once a Mac release is published; a Terminal build is the current option, not a requirement of the app itself. The [local build and validation notes](docs/MACOS_PORT.md#build-and-install) have more detail.
 
+### New Mac controls
+
+Performance → Mac background behavior offers Tab/Space selection, an opt-in focus fallback for detectable event-creation failures, and an App Nap override for Roblox. App Nap changes affect all Roblox clients on their next launch and may increase power use. Disabling the override restores the previous preference. Efficiency-only adaptive limits lower CPU/I/O priority without deliberate pauses; core placement remains controlled by macOS. System GPU utilization appears in Home and Monitor only when the driver reports it, and is never attributed to individual clients.
+
 ## Quick start
 
 1. Open RoALT and finish any macOS permission prompts you want to grant. Restart after granting them.
@@ -62,7 +74,7 @@ A downloadable ZIP should be the normal install method once a Mac release is pub
 <summary><b>How do I download this Mac version?</b></summary>
 <br>
 
-There is no Mac GitHub release asset yet. Use the [Terminal build-and-install commands](#install-on-macos) above. When a release ZIP is published, it will be the simpler download option. The Windows `.exe` on the original project's release page is not a Mac installer.
+Use the one-command source installer or the [Terminal build-and-install commands](#install-on-macos) above. When a release ZIP is published, it will be the simpler download option. The Windows `.exe` on the original project's release page is not a Mac installer.
 
 </details>
 
@@ -94,7 +106,7 @@ Enable **Multi-instance** in RoALT and launch clients from RoALT. The Mac port u
 <summary><b>Does anti-AFK guarantee I will not be kicked?</b></summary>
 <br>
 
-No. The Mac implementation sends a Space press to a visible client when you have been away, but individual Roblox games may not count synthetic input. Keep auto-rejoin as a fallback. Background or minimized anti-AFK is not available on Mac.
+No. The Mac implementation sends a Space press to a visible client when you have been away, but individual Roblox games may not count synthetic input. Keep auto-rejoin as a fallback. Experimental background mode sends input without focusing or restoring minimized windows. Its ability to prevent a real Roblox idle kick is unverified.
 
 </details>
 

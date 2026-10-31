@@ -1,12 +1,13 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { AccountSummary, ClientMetrics } from "../../api";
-import { useInstances, useMetrics } from "../../data";
+import { useInstances, useMetrics, useSystemUsage } from "../../data";
 import { accountName, Avatar } from "../accounts/shared";
 import { isRunning, STATES, uptime, useNow } from "../launch/Running";
 import { fmtNum, t } from "../../i18n";
 
 /** Samples kept per line: two minutes at one every 2 s. */
 const KEEP = 60;
+const IS_MAC = navigator.platform.startsWith("Mac");
 
 type Series = { cpu: number[]; mem: number[] };
 
@@ -70,6 +71,7 @@ function Tile({ label, value, children }: { label: string; value: string; childr
 export function MonitorView({ accounts }: { accounts: AccountSummary[] }) {
   const running = (useInstances().data ?? []).filter(isRunning);
   const metrics = useMetrics();
+  const system = useSystemUsage(IS_MAC).data;
   const now = useNow(30_000);
   const [hist, setHist] = useState<{ per: ReadonlyMap<string, Series>; totals: Series }>({ per: new Map(), totals: { cpu: [], mem: [] } });
   const byId = new Map(accounts.map((a) => [a.id, a]));
@@ -112,7 +114,8 @@ export function MonitorView({ accounts }: { accounts: AccountSummary[] }) {
           <Tile label={t("monitor.privateMemory")} value={mb(memNow)}>
             {list.length > 0 && <Sparkline values={hist.totals.mem} floor={64} label={t("monitor.privateMemoryAll")} format={mb} />}
           </Tile>
-          <Tile label={t("monitor.gpuMemory")} value={gpuMemNow === null ? "—" : mb(gpuMemNow)} />
+          {!IS_MAC && <Tile label={t("monitor.gpuMemory")} value={gpuMemNow === null ? "—" : mb(gpuMemNow)} />}
+          {IS_MAC && system?.gpuPct != null && <Tile label="GPU utilization — whole Mac" value={pct(system.gpuPct)} />}
           <Tile label={t("monitor.io")} value={rate(ioNow)} />
         </div>
 
@@ -129,8 +132,8 @@ export function MonitorView({ accounts }: { accounts: AccountSummary[] }) {
                 <th className="font-normal border-b border-line hidden xl:table-cell"><span className="sr-only">{t("monitor.cpuTrend")}</span></th>
                 <th className="font-normal border-b border-line text-right pr-3" title={t("monitor.memoryHint")}>{t("monitor.memory")}</th>
                 <th className="font-normal border-b border-line hidden xl:table-cell"><span className="sr-only">{t("monitor.memoryTrend")}</span></th>
-                <th className="font-normal border-b border-line text-right pr-3" title={t("monitor.gpuHint")}>{t("monitor.gpu")}</th>
-                <th className="font-normal border-b border-line text-right pr-3" title={t("monitor.gpuMemoryHint")}>{t("monitor.gpuMem")}</th>
+                {!IS_MAC && <th className="font-normal border-b border-line text-right pr-3" title={t("monitor.gpuHint")}>{t("monitor.gpu")}</th>}
+                {!IS_MAC && <th className="font-normal border-b border-line text-right pr-3" title={t("monitor.gpuMemoryHint")}>{t("monitor.gpuMem")}</th>}
                 <th className="font-normal border-b border-line text-right pr-3">{t("monitor.read")}</th>
                 <th className="font-normal border-b border-line text-right pr-3">{t("monitor.write")}</th>
                 <th className="font-normal border-b border-line text-right pr-3">{t("monitor.up")}</th>
@@ -162,8 +165,8 @@ export function MonitorView({ accounts }: { accounts: AccountSummary[] }) {
                     <td className="pr-3 hidden xl:table-cell"><Sparkline values={h?.cpu ?? []} floor={10} zero label={t("monitor.cpu")} format={pct} /></td>
                     <td className="pr-3 text-right" title={m ? t("monitor.workingSet", { mb: mb(m.workingSetMb) }) : undefined}>{m ? mb(m.privateMb) : "—"}</td>
                     <td className="pr-3 hidden xl:table-cell"><Sparkline values={h?.mem ?? []} floor={64} label={t("monitor.privateMemory")} format={mb} /></td>
-                    <td className="pr-3 text-right whitespace-nowrap">{m ? pct(m.gpuPct) : "—"}</td>
-                    <td className="pr-3 text-right whitespace-nowrap">{m && m.gpuMemMb !== null ? mb(m.gpuMemMb) : "—"}</td>
+                    {!IS_MAC && <td className="pr-3 text-right whitespace-nowrap">{m ? pct(m.gpuPct) : "—"}</td>}
+                    {!IS_MAC && <td className="pr-3 text-right whitespace-nowrap">{m && m.gpuMemMb !== null ? mb(m.gpuMemMb) : "—"}</td>}
                     <td className="pr-3 text-right whitespace-nowrap">{m ? rate(m.readBps) : "—"}</td>
                     <td className="pr-3 text-right whitespace-nowrap">{m ? rate(m.writeBps) : "—"}</td>
                     <td className="pr-3 text-right whitespace-nowrap">{uptime(i.startedAt, now)}</td>

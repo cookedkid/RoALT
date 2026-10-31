@@ -130,7 +130,7 @@ bool ro_preferred_language(char *out,size_t len) {
 double ro_gpu_pct(void) {
     @autoreleasepool {
         io_iterator_t services=0;
-        if(IOServiceGetMatchingServices(kIOMasterPortDefault,IOServiceMatching("AGXAccelerator"),&services)!=KERN_SUCCESS) return -1;
+        if(IOServiceGetMatchingServices(kIOMasterPortDefault,IOServiceMatching("IOAccelerator"),&services)!=KERN_SUCCESS) return -1;
         double utilization=-1;
         io_service_t service;
         while((service=IOIteratorNext(services))) {

@@ -387,7 +387,7 @@ function PcPanel({ metrics }: { metrics: ClientMetrics[] }) {
       </div>
       <Dial value={sys?.cpuPct ?? null} label={t("home.cpu")} hint={t("home.wholePc")} />
       <Dial value={memPct} label={t("home.memory")} hint={sys ? t("home.memOf", { used: mb(sys.memUsedMb), total: mb(sys.memTotalMb) }) : t("home.wholePc")} />
-      <Dial value={gpu} label={t("home.gpu")} hint={sys?.gpuPct != null ? t("home.wholePc") : t("home.allClients")} />
+      {(!navigator.platform.startsWith("Mac") || gpu !== null) && <Dial value={gpu} label={t("home.gpu")} hint={sys?.gpuPct != null ? t("home.wholePc") : t("home.allClients")} />}
     </section>
   );
 }
