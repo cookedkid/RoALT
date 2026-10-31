@@ -184,64 +184,83 @@ pub fn trim(_: u32, _: u64) -> Result<()> {
         "Memory trimming is unavailable on macOS.".into(),
     ))
 }
-pub fn plan(
-    clients: &[(String, u32, u64, Limits)],
-    v: &Settings,
-    foreground: Option<u32>,
-    cores: u32,
-    throttled: &[String],
-) -> Vec<(String, u32, u64, Limits)> {
-    let n = clients.len() as u32;
-    clients
-        .iter()
-        .enumerate()
-        .map(|(i, (id, pid, t0, manual))| {
-            let share = (v.auto_spread && n > 1).then(|| spread(i as u32, n, cores));
-            let mut l = effective(*manual, foreground == Some(*pid), v, share);
-            if v.mem_throttle.mb > 0 && throttled.contains(id) {
-                l.cpu_cap = Some(throttle_cap(l.cpu_cap, v.mem_throttle.cpu_cap));
-            }
-            (id.clone(), *pid, *t0, l)
-        })
-        .collect()
+/// Restore priority left by a prior manager; governors have their own death guardian.
+pub fn reset_followed(pid: u32, start: u64) {
+    if process::start_time(pid) == Some(start) && unsafe { native::ro_background(pid as i32, 0) } != 0 {
+        log::warn!("Could not reset background priority for tracked process {pid}");
+    }
 }
 
-/// One client's limits (pure): its own when the user set any (manual limits win), else the
-/// adaptive manager's background limits while its window isn't in front; then the default
-/// trim and the auto-spread `share` where it says nothing of its own.
-pub fn effective(manual: Limits, foreground: bool, v: &Settings, share: Option<u64>) -> Limits {
-    let mut l = if manual == Limits::default() && v.adaptive.enabled && !foreground {
-        v.adaptive.background
-    } else {
-        manual
+pub fn plan_now(s: &crate::App, v: &Settings, clients: &[(String, u32, u64, Limits)], throttled: &[String]) -> Vec<(String, u32, u64, Limits)> {
+    // If account settings cannot be read, avoid imposing automatic limits on any client.
+    let free = match s.db.full_quality_accounts() {
+        Ok(accounts) => s.tracker.free(&accounts, crate::commands::now_ms()),
+        Err(e) => { log::warn!("Could not read quality exemptions: {e}"); clients.iter().map(|c| c.0.clone()).collect() }
     };
-    if l.trim_every_min.is_none() && v.trim_every_min > 0 {
-        l.trim_every_min = Some(v.trim_every_min);
+    plan(clients, v, process::foreground_pid(), crate::commands::cores(), throttled, &free)
+}
+
+pub fn plan(clients: &[(String, u32, u64, Limits)], v: &Settings, foreground: Option<u32>, cores: u32, throttled: &[String], free: &[String]) -> Vec<(String, u32, u64, Limits)> {
+    let fair = v.fair_cap.then(|| fair_cap(clients.len() as u32, cores));
+    clients.iter().map(|(id,pid,start,manual)| {
+        let exempt = foreground == Some(*pid) || free.contains(id);
+        let mut l = effective(*manual, exempt, v, fair);
+        if !exempt && v.mem_throttle.mb > 0 && throttled.contains(id) {
+            l.cpu_cap = Some(throttle_cap(l.cpu_cap, v.mem_throttle.cpu_cap));
+        }
+        (id.clone(), *pid, *start, l)
+    }).collect()
+}
+
+/// Explicit manual limits survive exemptions; automatic limits never interrupt loading/play.
+pub fn effective(manual: Limits, free: bool, v: &Settings, fair: Option<u8>) -> Limits {
+    if free { return manual; }
+    let mut l = if manual == Limits::default() && v.adaptive.enabled { v.adaptive.background } else { manual };
+    if let Some(cap) = fair.filter(|_| manual.cpu_cap.is_none()) {
+        l.cpu_cap = Some(throttle_cap(l.cpu_cap, cap));
     }
-    if l.affinity.is_none() {
-        l.affinity = share;
-    }
+    // No CPU affinity or memory trim is synthesized on macOS.
     l
 }
 
-/// The CPU cap of a throttled client (pure): the throttle's, or its own if that is tighter.
-pub fn throttle_cap(own: Option<u8>, throttle: u8) -> u8 {
-    own.map_or(throttle, |c| c.min(throttle))
+pub fn throttle_cap(own: Option<u8>, throttle: u8) -> u8 { own.map_or(throttle, |c| c.min(throttle)) }
+
+/// Same 75% total-machine budget and quarter-core floor as upstream; enforcement is cooperative.
+pub fn fair_cap(n: u32, cores: u32) -> u8 {
+    (75 / n.max(1)).max(25u32.div_ceil(cores.max(1))).clamp(1,100) as u8
 }
 
-/// Client `i` of `n`'s cores out of `cores` (at most 64), round-robin (pure): with at least as
-/// many cores as clients each gets every n-th core; with more clients, one core each.
-pub fn spread(i: u32, n: u32, cores: u32) -> u64 {
-    let cores = cores.clamp(1, 64);
-    if n >= cores {
-        return 1 << (i % cores);
+#[cfg(test)]
+mod planning_tests {
+    use super::*;
+    #[test]
+    fn budget_scales_but_preserves_a_quarter_core_floor() {
+        assert_eq!(fair_cap(1,8),75);
+        assert_eq!(fair_cap(10,8),7);
+        assert_eq!(fair_cap(50,8),4);
+        assert_eq!(fair_cap(50,16),2);
+        assert_eq!(fair_cap(0,0),75);
     }
-    (0..cores)
-        .filter(|c| c % n == i % n)
-        .fold(0, |m, c| m | 1 << c)
-}
-
-/// The mask actually set: the cores asked for that exist (`system`); None when none do (pure).
-pub fn clamp_affinity(mask: u64, system: u64) -> Option<u64> {
-    Some(mask & system).filter(|&m| m != 0)
+    #[test]
+    fn active_loading_and_quality_clients_escape_all_automatic_limits() {
+        let mut v=Settings { fair_cap:true, ..Settings::default() };
+        v.adaptive.enabled=true;
+        v.adaptive.background=Limits { cpu_cap:Some(5), eco:true, ..Default::default() };
+        v.mem_throttle.mb=1; v.mem_throttle.cpu_cap=1;
+        let clients:Vec<_>=(1..=3).map(|pid|(pid.to_string(),pid,1,Limits::default())).collect();
+        let result=plan(&clients,&v,Some(1),8,&["1".into(),"2".into(),"3".into()],&["2".into()]);
+        assert_eq!(result[0].3,Limits::default());
+        assert_eq!(result[1].3,Limits::default());
+        assert_eq!(result[2].3.cpu_cap,Some(1));
+        assert!(result[2].3.eco);
+    }
+    #[test]
+    fn manual_cap_wins_and_efficiency_only_does_not_pause() {
+        let mut v=Settings::default();v.adaptive.enabled=true;v.adaptive.background=Limits { eco:true, ..Default::default() };
+        let own=Limits { cpu_cap:Some(30), ..Default::default() };
+        assert_eq!(effective(own,true,&v,Some(5)),own);
+        assert_eq!(effective(own,false,&v,Some(5)),own);
+        assert_eq!(effective(Limits::default(),false,&v,None),v.adaptive.background);
+        assert_eq!(effective(Limits::default(),false,&v,Some(5)).cpu_cap,Some(5));
+    }
 }

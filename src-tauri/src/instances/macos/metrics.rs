@@ -25,7 +25,7 @@ impl Sampler {
    let Some(r)=native::process(*pid).filter(|r|r.start==*start) else{continue};
    let now=Instant::now();let prev=last.get(id).filter(|p|p.0==*pid&&p.1==*start);
    let rate=|get:fn(native::Process)->u64|prev.and_then(|p|{let seconds=now.duration_since(p.2).as_secs_f64();(seconds>0.0).then(||get(r).saturating_sub(get(p.3)) as f64/seconds)});
-   out.push(ClientMetrics{instance_id:id.clone(),pid:*pid,cpu_pct:rate(|r|r.cpu).map(|n|(n/1e9/cores*100.0).clamp(0.0,100.0)),working_set_mb:r.resident as f64/MB,private_mb:r.footprint as f64/MB,read_bps:rate(|r|r.read),write_bps:rate(|r|r.written),gpu_pct:None,gpu_mem_mb:None});
+   out.push(ClientMetrics{instance_id:id.clone(),pid:*pid,cpu_pct:rate(|r|r.cpu).map(|n|(n/1e9/cores*100.0).clamp(0.0,100.0)),memory_mb:r.footprint as f64/MB,private_mb:r.footprint as f64/MB,read_bps:rate(|r|r.read),write_bps:rate(|r|r.written),gpu_pct:None,gpu_mem_mb:None});
    last.insert(id.clone(),(*pid,*start,now,r));
   }
   out
@@ -43,7 +43,7 @@ pub fn read(pid:u32,t0:u64)->Option<Reading>{native::process(pid).filter(|r|r.st
  #[test] fn real_native_metrics_and_stale_identity(){
   let pid=std::process::id();let start=native::process(pid).unwrap().start;
   let sampler=Sampler::new();let clients=vec![("self".into(),pid,start,Limits::default())];
-  let a=sampler.sample(&clients);assert_eq!(a.len(),1);assert!(a[0].working_set_mb>0.0);assert!(a[0].private_mb>0.0);assert_eq!(a[0].cpu_pct,None);
+  let a=sampler.sample(&clients);assert_eq!(a.len(),1);assert!(a[0].memory_mb>0.0);assert!(a[0].private_mb>0.0);assert_eq!(a[0].cpu_pct,None);
   std::thread::sleep(Duration::from_millis(10));assert!(sampler.sample(&clients)[0].cpu_pct.is_some());
   assert!(sampler.system().unwrap().mem_total_mb>0.0);assert!(read(pid,start+1).is_none());
  }

@@ -1460,9 +1460,8 @@ pub async fn instance_set_limits(app: AppHandle, s: State<'_, App>, id: String, 
             log::warn!("could not read settings for the limits of {id}; using defaults: {e}");
             Default::default()
         });
-        let fg = if v.adaptive.enabled { crate::instances::process::foreground_pid() } else { None };
         let held = s.tracker.throttle(v.mem_throttle.mb).0;
-        let plan = crate::instances::limits::plan(&s.tracker.clients(), &v, fg, cores(), &held);
+        let plan = crate::instances::limits::plan_now(&s, &v, &s.tracker.clients(), &held);
         match plan.into_iter().find(|c| c.0 == id) {
             Some((_, pid, t0, l)) => s.limiter.apply(&id, pid, t0, l).map_err(|e| (id, e)),
             None => Ok(()),
@@ -1520,62 +1519,78 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> 
     tauri::async_runtime::spawn_blocking(f).await.map_err(|e| AppError::Internal(e.to_string()))
 }
 
-/// A picture of one client's window at most `max_w` (16..=1280) pixels wide, as raw bytes:
-/// width, height and 1 if it is parked off-screen, else 0 (u32 little-endian each), then RGBA rows
-/// top-down. Empty while it is minimized, has no window yet or is still behind its bootstrapper.
+/// One client's preview as raw bytes, at most `max_w` (16..=1280) pixels wide: a 24-byte header
+/// (`window::Preview::to_bytes`), then the picture's RGBA unless `known` is its number already.
+/// Answers at once with the newest picture there is.
 #[tauri::command]
-pub async fn instance_thumbnail(s: State<'_, App>, id: String, max_w: u32) -> Result<tauri::ipc::Response> {
-    let Some(pid) = client_pid(&s, &id)? else { return Ok(tauri::ipc::Response::new(Vec::new())) };
+pub async fn instance_thumbnail(s: State<'_, App>, id: String, max_w: u32, known: u32) -> Result<tauri::ipc::Response> {
+    let pid = client_pid(&s, &id)?;
     #[cfg(windows)]
-    let thumb = blocking(move || crate::instances::window::thumbnail(pid, max_w.clamp(16, 1280))).await?;
-    #[cfg(target_os="macos")]
-    let thumb = {let start=s.tracker.clients().into_iter().find(|c|c.0==id).ok_or_else(not_started)?.2;blocking(move||crate::instances::window::thumbnail(pid,start,max_w.clamp(16,1280))).await??};
-    let bytes = thumb.map_or_else(Vec::new, |(t, parked)| {
-        let mut b = Vec::with_capacity(12 + t.rgba.len());
-        b.extend(t.width.to_le_bytes());
-        b.extend(t.height.to_le_bytes());
-        b.extend(u32::from(parked).to_le_bytes());
-        b.extend(t.rgba);
-        b
-    });
-    Ok(tauri::ipc::Response::new(bytes))
+    {
+        let preview = blocking(move || crate::instances::window::preview(pid, max_w.clamp(16, 1280))).await?;
+        Ok(tauri::ipc::Response::new(preview.to_bytes(known)))
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = known; // Mac screenshots are fresh rather than cached frames.
+        let Some(pid) = pid else { return Ok(tauri::ipc::Response::new(mac_preview_bytes(None, 2))) };
+        let start = s.tracker.clients().into_iter().find(|c| c.0 == id).ok_or_else(not_started)?.2;
+        let thumb = blocking(move || crate::instances::window::thumbnail(pid, start, max_w.clamp(16, 1280))).await??;
+        Ok(tauri::ipc::Response::new(mac_preview_bytes(thumb.map(|(t, _)| t), 3)))
+    }
 }
 
-pub(crate) fn show_tracked(pid:u32,start:u64,what:crate::instances::window::Show,park:bool)->Result<()> {
-    if crate::instances::process::start_time(pid)!=Some(start){return Err(not_started())}
-    crate::instances::window::show(pid,what,park)
+/// The same 24-byte preview header as Windows, without claiming hidden-window support.
+#[cfg(target_os = "macos")]
+fn mac_preview_bytes(thumb: Option<crate::instances::window::Thumb>, empty_status: u32) -> Vec<u8> {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static SEQUENCE: AtomicU32 = AtomicU32::new(1);
+    let mut bytes = Vec::new();
+    let header = match &thumb {
+        Some(t) => [t.width, t.height, 0, 0, SEQUENCE.fetch_add(1, Ordering::Relaxed), 0],
+        None => [0, 0, empty_status, 0, 0, 0],
+    };
+    for value in header { bytes.extend(value.to_le_bytes()); }
+    if let Some(t) = thumb { bytes.extend(t.rgba); }
+    bytes
 }
 
-/// Brings one client's window to the front, minimizes or restores it.
+pub(crate) fn show_tracked(pid: u32, start: u64, what: crate::instances::window::Show, park: bool) -> Result<()> {
+    if crate::instances::process::start_time(pid) != Some(start) { return Err(not_started()); }
+    #[cfg(target_os = "macos")]
+    { crate::instances::window::show(pid, what, park) }
+    #[cfg(windows)]
+    { let _ = park; crate::instances::window::show(pid, what) }
+}
+
+/// Brings one client's window to the front, minimizes/hides or restores it.
 #[tauri::command]
 pub async fn instance_show(s: State<'_, App>, id: String, what: crate::instances::window::Show) -> Result<()> {
     let pid = client_pid(&s, &id)?.ok_or_else(not_started)?;
-    let park = s.db.settings()?.park_minimized;
-    let started=s.tracker.clients().into_iter().find(|c|c.1==pid).ok_or_else(not_started)?.2;
-    blocking(move || show_tracked(pid,started,what,park)).await?
+    let started = s.tracker.clients().into_iter().find(|c| c.1 == pid).ok_or_else(not_started)?.2;
+    blocking(move || show_tracked(pid, started, what, false)).await?
+
 }
 
-/// Minimizes or restores every running client's window (focus is for one client).
+/// Hides or restores every running client's window (focus is for one client).
 #[tauri::command]
 pub async fn instances_show_all(s: State<'_, App>, what: crate::instances::window::Show) -> Result<()> {
     if what == crate::instances::window::Show::Focus {
         return Err(AppError::Invalid(tr!("Only one client can be in front.")));
     }
-    let clients = s.tracker.clients();
-    let park = s.db.settings()?.park_minimized;
-    // One without a window yet has nothing to show or hide.
-    blocking(move || {
-        for (_,pid,started,_) in clients {
-            if let Err(e) = show_tracked(pid,started,what,park) {
-                #[cfg(target_os = "macos")]
-                return Err(e);
-                #[cfg(windows)]
-                log::debug!("show all: client {pid}: {e}");
-            }
-        }
-        Ok(())
-    })
-    .await?
+    #[cfg(target_os = "macos")]
+    {
+        let clients = s.tracker.clients();
+        blocking(move || {
+            for (_, pid, started, _) in clients { show_tracked(pid, started, what, false)?; }
+            Ok(())
+        }).await?
+    }
+    #[cfg(windows)]
+    {
+        let pids: Vec<u32> = s.tracker.clients().into_iter().map(|c| c.1).collect();
+        blocking(move || crate::instances::window::show_all(&pids, what)).await
+    }
 }
 
 /// Makes one client's window small (`window::MICRO` client area) or puts it back as it was.
@@ -1603,7 +1618,7 @@ fn check_window_size((w, h): (u32, u32)) -> Result<()> {
 }
 
 /// Lays every running client's window out in a grid on the monitor RoALT is on, `micro`-sized
-/// or as big as all fit (`window::tile`; minimized ones are left alone). How many it laid out.
+/// or as big as all fit (`window::tile`; hidden and minimized ones are left alone). How many it laid out.
 #[cfg(windows)]
 #[tauri::command]
 pub async fn instances_tile(app: AppHandle, s: State<'_, App>, micro: bool) -> Result<usize> {
@@ -2295,6 +2310,13 @@ pub fn performance_parse(s: State<'_, App>, text: String) -> Result<crate::perfo
 /// The performance part of a settings change, checked and applied to `v` (no side effects): also
 /// what a performance profile is checked with (`performance::parse`).
 pub(crate) fn apply_performance(v: &mut Settings, patch: &SettingsPatch) -> Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        if patch.trim_every_min.is_some_and(|n| n > 0) || patch.auto_spread == Some(true) || patch.lighter_rendering == Some(true) {
+            return Err(AppError::Invalid("Memory trimming, core affinity and Windows rendering flags are unavailable on macOS.".into()));
+        }
+        if let Some(a) = patch.adaptive { crate::instances::limits::validate(a.background)?; }
+    }
     if let Some(f) = patch.fps_cap {
         check_fps(f)?;
         v.fps_cap = f;
@@ -2302,7 +2324,6 @@ pub(crate) fn apply_performance(v: &mut Settings, patch: &SettingsPatch) -> Resu
     if let Some(l) = patch.low_graphics { v.low_graphics = l }
     if let Some(l) = patch.lighter_rendering { v.lighter_rendering = l }
     if let Some(r) = patch.render_flags { v.render_flags = r }
-    if let Some(p) = patch.park_minimized { v.park_minimized = p }
     if let Some(m) = patch.minimize_on_launch { v.minimize_on_launch = m }
     if let Some(t) = patch.tiny_on_launch { v.tiny_on_launch = t }
     if patch.micro_width.is_some() || patch.micro_height.is_some() {
@@ -2332,6 +2353,7 @@ pub(crate) fn apply_performance(v: &mut Settings, patch: &SettingsPatch) -> Resu
         v.trim_every_min = m;
     }
     if let Some(a) = patch.auto_spread { v.auto_spread = a }
+    if let Some(f) = patch.fair_cap { v.fair_cap = f }
     if let Some(a) = patch.adaptive {
         check_limits(&a.background)?;
         v.adaptive = a;
@@ -2342,9 +2364,7 @@ pub(crate) fn apply_performance(v: &mut Settings, patch: &SettingsPatch) -> Resu
 #[tauri::command]
 pub fn settings_set(app: AppHandle, s: State<'_, App>, patch: SettingsPatch) -> Result<Settings> {
     #[cfg(target_os = "macos")]
-    if patch.trim_every_min.is_some_and(|n|n>0) || patch.auto_spread==Some(true)
-      || patch.lighter_rendering==Some(true) || patch.park_minimized==Some(true)
-      || patch.auto_update==Some(true) || patch.self_update==Some(true)
+    if patch.auto_update==Some(true) || patch.self_update==Some(true)
       {
        return Err(AppError::Invalid("This Windows-specific option is unavailable in the macOS build.".into()));
     }
@@ -2464,12 +2484,12 @@ pub fn settings_set(app: AppHandle, s: State<'_, App>, patch: SettingsPatch) -> 
         set_panic_hotkey(&app, &had, k)?;
         v.panic_hotkey = k.to_owned();
     }
-    let rest = (|| {
+    let rest = {
         if let Some(a) = patch.allow_public_networks {
             v.allow_public_networks = a;
         }
         s.db.save_settings(&v)
-    })();
+    };
     if rest.is_err()
         && v.panic_hotkey != had
         && let Err(e) = set_panic_hotkey(&app, &v.panic_hotkey, &had)
@@ -2617,5 +2637,42 @@ nothing here
         assert!(normalize_cookie("").is_err());
         assert!(normalize_cookie("has space").is_err());
         assert!(normalize_cookie(".ROBLOSECURITY=").is_err());
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod mac_preview_tests {
+    use super::*;
+
+    #[test]
+    fn preview_header_matches_frontend_wire_format() {
+        let absent = mac_preview_bytes(None, 2);
+        assert_eq!(absent.len(), 24);
+        assert_eq!(u32::from_le_bytes(absent[8..12].try_into().unwrap()), 2);
+        let pending = mac_preview_bytes(None, 3);
+        assert_eq!(u32::from_le_bytes(pending[8..12].try_into().unwrap()), 3);
+        let frame = || crate::instances::window::Thumb { width: 1, height: 1, rgba: vec![10, 20, 30, 255] };
+        let one = mac_preview_bytes(Some(frame()), 3);
+        let two = mac_preview_bytes(Some(frame()), 3);
+        assert_eq!(one.len(), 28);
+        assert_eq!(&one[24..], &[10, 20, 30, 255]);
+        assert_eq!(u32::from_le_bytes(one[0..4].try_into().unwrap()), 1);
+        assert_eq!(u32::from_le_bytes(one[8..12].try_into().unwrap()), 0);
+        assert_eq!(u32::from_le_bytes(one[12..16].try_into().unwrap()), 0);
+        assert_ne!(&one[16..20], &two[16..20], "fresh screenshots must not be discarded as cached");
+    }
+
+    #[test]
+    fn performance_profiles_reject_windows_only_controls_before_mutating() {
+        for patch in [
+            SettingsPatch { trim_every_min: Some(1), ..Default::default() },
+            SettingsPatch { auto_spread: Some(true), ..Default::default() },
+            SettingsPatch { lighter_rendering: Some(true), ..Default::default() },
+        ] {
+            let mut settings = Settings::default();
+            let original = settings.clone();
+            assert!(apply_performance(&mut settings, &patch).is_err());
+            assert_eq!(settings, original);
+        }
     }
 }

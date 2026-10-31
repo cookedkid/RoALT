@@ -6,30 +6,50 @@
 // language (`key_one`, `key_few`, `key_many`, `key_other`); `t(key, { count })` picks one with
 // Intl.PluralRules. `scripts/check-i18n.mjs` fails the build when a catalog misses a key.
 import { Fragment, createElement, type ReactNode } from "react";
+import ar from "./locales/ar.json";
 import bs from "./locales/bs.json";
 import de from "./locales/de.json";
 import en from "./locales/en.json";
+import es from "./locales/es.json";
+import fil from "./locales/fil.json";
+import fr from "./locales/fr.json";
 import id from "./locales/id.json";
+import ja from "./locales/ja.json";
+import ko from "./locales/ko.json";
 import pl from "./locales/pl.json";
+import pt from "./locales/pt.json";
 import ru from "./locales/ru.json";
 import sv from "./locales/sv.json";
+import th from "./locales/th.json";
 import tr from "./locales/tr.json";
+import vi from "./locales/vi.json";
+import zh from "./locales/zh.json";
 
 /** Language codes with their own name, in picker order. */
 export const LANGUAGES = [
   ["en", "English"],
+  ["ar", "العربية"],
   ["bs", "Bosanski"],
   ["de", "Deutsch"],
+  ["es", "Español"],
+  ["fil", "Filipino"],
+  ["fr", "Français"],
   ["id", "Bahasa Indonesia"],
+  ["ja", "日本語"],
+  ["ko", "한국어"],
   ["pl", "Polski"],
+  ["pt", "Português (Brasil)"],
   ["ru", "Русский"],
   ["sv", "Svenska"],
+  ["th", "ไทย"],
   ["tr", "Türkçe"],
+  ["vi", "Tiếng Việt"],
+  ["zh", "简体中文"],
 ] as const;
 export type Lang = (typeof LANGUAGES)[number][0];
 
 type Catalog = Record<string, string>;
-const catalogs: Record<Lang, Catalog> = { en, bs, de, id, pl, ru, sv, tr };
+const catalogs: Record<Lang, Catalog> = { en, ar, bs, de, es, fil, fr, id, ja, ko, pl, pt, ru, sv, th, tr, vi, zh };
 
 type PluralSuffix = "_one" | "_few" | "_many" | "_other";
 type Base<K> = K extends `${infer B}${PluralSuffix}` ? B : K;
@@ -60,14 +80,17 @@ export function setLang(pref: string | undefined) {
   rules = new Intl.PluralRules(lang);
   numbers = new Intl.NumberFormat(lang);
   document.documentElement.lang = lang;
+  document.documentElement.dir = lang === "ar" ? "rtl" : "ltr";
 }
 
 export const getLang = () => lang;
+/** The layout runs right to left: screen X in pointer and arrow-key logic is mirrored. */
+export const isRtl = () => lang === "ar";
 
 // Platform-specific security copy must describe the actual credential provider.
 const macCopy: Partial<Record<Key, string>> = {
  "settings.antiAfkBackgroundHint": "Experimental: send the selected key directly to tracked Roblox processes without changing focus, including minimized clients. Skips recent human activity. Posting does not confirm game acceptance or prevent idle kicks reliably.",
- "settings.antiAfkHint": "Opt-in: briefly focus visible tracked clients and send Space while you are idle. Requires Accessibility and Input Monitoring in System Settings → Privacy & Security; restart RoALT after granting permissions.",
+ "settings.antiAfkHint": "Opt-in: briefly focus visible tracked clients and send the selected key while you are idle. Requires Accessibility and Input Monitoring in System Settings → Privacy & Security; restart RoALT after granting permissions.",
  "settings.antiAfkFocusHint": "After 5 seconds without keyboard or mouse activity, briefly focus each due client and send the selected key. Manual input interrupts the round. Minimized clients are skipped. Game acceptance is not guaranteed.",
  "dashboard.previewFpsHint": "Window-only captures require Screen Recording permission. Lower rates save CPU. Minimized windows have no live preview.",
  "launch.limits.cpu": "Cooperative CPU cap (% of whole Mac)",
@@ -80,8 +103,8 @@ const macCopy: Partial<Record<Key, string>> = {
  "launch.limits.eco": "Efficiency mode (background priority)",
  "launch.limits.help": "CPU cap is a percentage of total Mac CPU capacity, enforced by brief process pauses. It may stutter and is not a kernel quota. A separate guardian resumes clients if RoALT or the governor exits or stalls. Background priority lowers CPU and I/O scheduling priority.",
  "settings.memRestartHint": "Restart a client whose physical memory footprint stays over this value for 30 seconds. 0 turns it off.",
- "monitor.privateMemory": "Physical footprint",
- "monitor.privateMemoryAll": "Physical footprint, all clients",
+ "monitor.memory": "Physical footprint",
+ "monitor.memoryAll": "Physical footprint, all clients",
  "performance.intro": "Tune FPS, graphics, cooperative CPU caps and background priority. CPU caps use brief pauses and can stutter; percentages refer to the entire Mac, not one core.",
  "settings.minimizeHint": "Minimize after launch. Enable RoALT in System Settings → Privacy & Security → Accessibility first.",
  "home.welcomeLead": "Manage your Roblox accounts on Mac. Three steps to your first game.",

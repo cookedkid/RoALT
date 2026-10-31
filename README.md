@@ -1,6 +1,6 @@
 <div align="center">
 
-# RoALT for macOS — 0.7.2
+# RoALT for macOS — 0.8.0
 
 ### A native Apple Silicon port of the Roblox account manager
 
@@ -11,6 +11,12 @@ This fork ports [inspectsoftware/RoALT](https://github.com/inspectsoftware/RoALT
 [Features](#features) · [Install](#install-on-macos) · [FAQ](#faq) · [Technical notes](docs/MACOS_PORT.md)
 
 </div>
+
+## 0.8.0 Mac update
+
+Includes upstream account tabs, sortable/resizable preview cards, compact view, expanded languages, settings layout and launch/profile fixes. Optimization comes first: a shared cooperative CPU budget scales with client count; foreground, loading, unresponsive and Full quality clients are exempt from automatic limits. Explicit per-client limits remain in effect. Efficiency-only mode disables the shared cap and avoids intentional pauses. Mac previews stay at 2/5/10 FPS with at most 10 requests per second across visible cards.
+
+Home CPU and memory now total tracked Roblox clients. Mac memory is physical footprint; GPU remains clearly labeled as whole-Mac utilization. Windows memory trimming, hard CPU quotas and invisible/click-through live windows are not ported. Mac uses ordinary minimize/restore, and minimized clients have no live preview. No claim is made that Windows' 295 MB example is achievable on Mac.
 
 ## Features
 
@@ -32,7 +38,7 @@ Unsupported controls are hidden or rejected on macOS. See [the port notes](docs/
 
 ## Install on macOS
 
-**Apple Silicon only.** [Download the 0.7.2 Mac preview ZIP](https://github.com/cookedkid/RoALT/releases/download/macos-preview-0.7.2-3/RoALT-macOS-Apple-Silicon.zip), unzip it, and drag `RoALT.app` into Applications. [Release notes and checksums](https://github.com/cookedkid/RoALT/releases/tag/macos-preview-0.7.2-3).
+**Apple Silicon only.** [Download the 0.8.0 Mac preview ZIP](https://github.com/cookedkid/RoALT/releases/download/macos-preview-0.8.0-4/RoALT-macOS-Apple-Silicon.zip), unzip it, and drag `RoALT.app` into Applications. [Release notes and checksums](https://github.com/cookedkid/RoALT/releases/tag/macos-preview-0.8.0-4).
 
 Or install the same preview with one Terminal command:
 
@@ -44,7 +50,7 @@ This downloads the prebuilt app into `~/Applications`. **No Rust, Node, Xcode or
 
 The preview is ad-hoc signed and not notarized. macOS may require approval to open it or access an existing RoALT Keychain item. Approve requested Accessibility, Screen Recording and Input Monitoring access yourself, then restart RoALT. Anti-AFK remains off until enabled.
 
-RoALT does not yet check for or install updates inside the Mac app. New versions require a replacement download or an updated installer command; this command currently installs preview 0.7.2.
+RoALT does not yet check for or install updates inside the Mac app. New versions require a replacement download or an updated installer command; this command currently installs preview 0.8.0.
 
 <details>
 <summary>Build from source instead</summary>

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 /** Live preview frame rates; the choice is remembered on this PC and shared by the Dashboard and
  * the Performance tab. */
-export const PREVIEW_FPS = (navigator.platform.startsWith("Mac") ? [2, 5, 10] : [15, 30, 60]) as readonly (2 | 5 | 10 | 15 | 30 | 60)[];
+export const PREVIEW_FPS = (navigator.platform.startsWith("Mac") ? [2, 5, 10] : [5, 15, 30, 60]) as readonly (2 | 5 | 10 | 15 | 30 | 60)[];
 export type PreviewFps = (typeof PREVIEW_FPS)[number];
 const KEY = "roalt.previewFps";
 const CHANGED = "roalt:previewFps";

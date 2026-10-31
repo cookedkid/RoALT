@@ -9,11 +9,11 @@ export type ClientMetrics = { instanceId: string, pid: number,
  */
 cpuPct: number | null, 
 /**
- * Working set (what Task Manager's details show), MB.
+ * Windows: private working set. macOS: physical footprint. MB.
  */
-workingSetMb: number, 
+memoryMb: number, 
 /**
- * Private bytes (what a leak grows), MB.
+ * Private bytes (Task Manager's Commit size, what a leak grows and the memory limits watch), MB.
  */
 privateMb: number, 
 /**
@@ -21,7 +21,7 @@ privateMb: number,
  */
 readBps: number | null, writeBps: number | null, 
 /**
- * 3D GPU use, percent of one engine set (None when Windows can't say).
+ * Use of its busiest GPU engine (Task Manager's GPU column), percent (None when Windows can't say).
  */
 gpuPct: number | null, 
 /**
