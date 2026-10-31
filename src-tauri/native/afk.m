@@ -33,6 +33,10 @@ int ro_afk_ready(void){
  if(!input_tap){CGEventMask mask=CGEventMaskBit(kCGEventKeyDown)|CGEventMaskBit(kCGEventKeyUp)|CGEventMaskBit(kCGEventFlagsChanged)|CGEventMaskBit(kCGEventMouseMoved)|CGEventMaskBit(kCGEventLeftMouseDown)|CGEventMaskBit(kCGEventRightMouseDown)|CGEventMaskBit(kCGEventOtherMouseDown)|CGEventMaskBit(kCGEventScrollWheel)|CGEventMaskBit(kCGEventLeftMouseUp)|CGEventMaskBit(kCGEventRightMouseUp)|CGEventMaskBit(kCGEventOtherMouseUp)|CGEventMaskBit(kCGEventOtherMouseDragged)|CGEventMaskBit(kCGEventLeftMouseDragged)|CGEventMaskBit(kCGEventRightMouseDragged);input_tap=CGEventTapCreate(kCGSessionEventTap,kCGHeadInsertEventTap,kCGEventTapOptionListenOnly,mask,observe,NULL);if(input_tap){atomic_store(&last_input,now_ns());pthread_t thread;if(pthread_create(&thread,NULL,listen_input,NULL)){CFRelease(input_tap);input_tap=NULL;}else pthread_detach(thread);}}
  int result=input_tap?0:-2;pthread_mutex_unlock(&setup_lock);return result;
 }
+static void restore_focus(NSRunningApplication *previous,int pid,uint64_t before) {
+ if(previous && atomic_load(&last_input)==before && NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier==pid)
+  [previous activateWithOptions:NSApplicationActivateIgnoringOtherApps];
+}
 static BOOL same(int pid,uint64_t start){struct proc_bsdinfo b={0};return proc_pidinfo(pid,PROC_PIDTBSDINFO,0,&b,sizeof(b))==sizeof(b)&&b.pbi_uid==getuid()&&b.pbi_start_tvsec==start;}
 int ro_afk_press_mode(int pid,uint64_t start,bool background,int keycode){@autoreleasepool{
  if(keycode!=48&&keycode!=49)return -3;
@@ -45,7 +49,7 @@ int ro_afk_press_mode(int pid,uint64_t start,bool background,int keycode){@autor
  usleep(50000);if(atomic_load(&last_input)!=before||NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier!=pid||!same(pid,start))return 1;
  }
  CGKeyCode key=(CGKeyCode)keycode;
- CGEventSourceRef source=CGEventSourceCreate(kCGEventSourceStatePrivate);if(!source)return -1;CGEventRef down=CGEventCreateKeyboardEvent(source,key,true),up=CGEventCreateKeyboardEvent(source,key,false);if(source)CFRelease(source);if(!down||!up){if(down)CFRelease(down);if(up)CFRelease(up);return -1;}
+ CGEventSourceRef source=CGEventSourceCreate(kCGEventSourceStatePrivate);if(!source){restore_focus(previous,pid,before);return -1;}CGEventRef down=CGEventCreateKeyboardEvent(source,key,true),up=CGEventCreateKeyboardEvent(source,key,false);if(source)CFRelease(source);if(!down||!up){if(down)CFRelease(down);if(up)CFRelease(up);restore_focus(previous,pid,before);return -1;}
  CGEventSetIntegerValueField(down,kCGEventSourceUserData,marker);CGEventSetIntegerValueField(up,kCGEventSourceUserData,marker);
  // Both edges target the verified client PID, never whichever app happens to be frontmost.
  if(atomic_load(&last_input)!=before||!same(pid,start)){CFRelease(down);CFRelease(up);return 1;}

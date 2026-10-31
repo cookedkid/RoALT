@@ -26,35 +26,38 @@ This fork ports [inspectsoftware/RoALT](https://github.com/inspectsoftware/RoALT
 
 - Background/minimized anti-AFK is implemented but unverified in Roblox. Kernel CPU quotas, core affinity/spreading, memory trimming, bandwidth shaping and per-client GPU/VRAM counters remain unsupported.
 - Scheduled shutdown, Windows-style public-network classification, and automatic Roblox or RoALT installation and updates.
-- A notarized Mac installer, Intel or universal build, and a downloadable Mac GitHub release.
+- Developer ID signing/notarization and Intel/universal builds. The Mac ZIP is an ad-hoc signed preview.
 
 Unsupported controls are hidden or rejected on macOS. See [the port notes](docs/MACOS_PORT.md) for implementation details and the remaining acceptance checks. The [original Windows repository](https://github.com/inspectsoftware/RoALT) documents Windows-specific features.
 
 ## Install on macOS
 
-**Apple Silicon only.** One command builds and installs the latest source into `~/Applications` after checking your build tools:
+**Apple Silicon only.** [Download the 0.7.1 Mac preview ZIP](https://github.com/cookedkid/RoALT/releases/download/macos-preview-0.7.1-2/RoALT-macOS-Apple-Silicon.zip), unzip it, and drag `RoALT.app` into Applications. [Release notes and checksums](https://github.com/cookedkid/RoALT/releases/tag/macos-preview-0.7.1-2).
+
+Or install the same preview with one Terminal command:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/cookedkid/RoALT/main/scripts/install-macos-release.sh | bash
+```
+
+This downloads the prebuilt app into `~/Applications`. **No Rust, Node, Xcode or Homebrew is required.** The installer checks the SHA-256, app identity, version and architecture before replacing an existing app, and restores the old copy if replacement fails. It does not launch RoALT. You can read [the installer](scripts/install-macos-release.sh) first.
+
+The preview is ad-hoc signed and not notarized. macOS may require approval to open it or access an existing RoALT Keychain item. Approve requested Accessibility, Screen Recording and Input Monitoring access yourself, then restart RoALT. Anti-AFK remains off until enabled.
+
+RoALT does not yet check for or install updates inside the Mac app. New versions require a replacement download or an updated installer command; this command currently installs preview 0.7.1.
+
+<details>
+<summary>Build from source instead</summary>
+
+Requires Xcode Command Line Tools, Node.js 22+ and Rust 1.95+:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/cookedkid/RoALT/main/scripts/install-macos.sh | bash
 ```
 
-The script does not automatically install build tools or open RoALT. It verifies the app signature and preserves the previous app if replacement fails. You can read [the installer](scripts/install-macos.sh) before running it. This is a source build, not a prebuilt binary download. Mac preview ZIPs will appear in [Releases](https://github.com/cookedkid/RoALT/releases) after the [Mac release workflow](.github/workflows/macos-release.yml) completes successfully.
+The source installer builds the current `main` branch, verifies the app and installs into `~/Applications`. It checks prerequisites and does not silently install developer tools. See [build details](docs/MACOS_PORT.md#build-and-install).
 
-For a manual source build, You need [Xcode Command Line Tools](https://developer.apple.com/xcode/resources/), Node.js 22 or newer, and Rust 1.95 or newer. After installing those prerequisites, paste this into Terminal:
-
-```sh
-git clone https://github.com/cookedkid/RoALT.git
-cd RoALT
-npm ci
-npm run tauri -- build --bundles app
-mkdir -p "$HOME/Applications"
-ditto src-tauri/target/release/bundle/macos/RoALT.app "$HOME/Applications/RoALT.app"
-open "$HOME/Applications/RoALT.app"
-```
-
-The build may take several minutes. The app is ad-hoc signed and not notarized. macOS may ask you to approve opening it and to allow access to an existing RoALT Keychain item after a rebuild. The app requests missing Screen Recording, Input Monitoring, event-posting and Accessibility permissions on first launch. Approve them in macOS, then restart RoALT. Anti-AFK remains off until you enable it.
-
-A downloadable ZIP should be the normal install method once a Mac release is published; a Terminal build is the current option, not a requirement of the app itself. The [local build and validation notes](docs/MACOS_PORT.md#build-and-install) have more detail.
+</details>
 
 ### New Mac controls
 
@@ -74,7 +77,7 @@ Performance → Mac background behavior offers Tab/Space selection, an opt-in fo
 <summary><b>How do I download this Mac version?</b></summary>
 <br>
 
-Use the one-command source installer or the [Terminal build-and-install commands](#install-on-macos) above. When a release ZIP is published, it will be the simpler download option. The Windows `.exe` on the original project's release page is not a Mac installer.
+Download the Mac preview ZIP or use the [one-command binary installer](#install-on-macos). Both install the same Apple Silicon app. The Terminal binary installer needs no developer tools.
 
 </details>
 
