@@ -12,7 +12,7 @@ This fork ports [inspectsoftware/RoALT](https://github.com/inspectsoftware/RoALT
 
 </div>
 
-## 0.8.0 Mac update
+## beta 0.8.0 Mac update
 
 Includes upstream account tabs, sortable/resizable preview cards, compact view, expanded languages, settings layout and launch/profile fixes. Optimization comes first: a shared cooperative CPU budget scales with client count; foreground, loading, unresponsive and Full quality clients are exempt from automatic limits. Explicit per-client limits remain in effect. Efficiency-only mode disables the shared cap and avoids intentional pauses. Mac previews stay at 2/5/10 FPS with at most 10 requests per second across visible cards.
 
