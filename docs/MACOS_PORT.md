@@ -22,7 +22,7 @@ Native Apple Silicon Tauri/WKWebView build retaining the real account manager, R
 
 ## Not implemented
 
-Kernel-enforced CPU quotas, core affinity/spreading, arbitrary memory trimming or memory allocation caps, per-process GPU/VRAM counters, bandwidth shaping, scheduled shutdown, network classification and automatic Roblox/app installers/updates. Unsupported controls are hidden in the Mac performance/instance UI and rejected by the backend. Windows rendering flags are not written into the signed Mac app. Disabling public networks blocks launches because macOS does not expose Windows' network categories.
+Kernel-enforced CPU quotas, core affinity/spreading, arbitrary memory trimming or memory allocation caps, per-process GPU/VRAM counters, bandwidth shaping, scheduled shutdown, network classification and automatic Roblox player installation and updates. Unsupported controls are hidden in the Mac performance/instance UI and rejected by the backend. Windows rendering flags are not written into the signed Mac app. Disabling public networks blocks launches because macOS does not expose Windows' network categories.
 
 ## Validation and remaining acceptance check
 
@@ -82,3 +82,7 @@ Validation: 303 Rust tests passed, 2 ignored, including native governor/priority
 ## Preview update permission repair
 
 Both Terminal installers compare the previous and installed app CDHash after successful replacement. A changed (or unreadable) hash resets only RoALT's Accessibility, ScreenCapture and ListenEvent grants using tccutil; the same hash leaves grants untouched. Failed downloads/builds/replacements do not reset permissions. No Keychain item, vault or unrelated app permission is removed. The user must approve the new grants and restart RoALT. This prevents old ad-hoc grant mismatches for installer-based updates; ZIP drag-and-drop updates may still need a manual reset. Stable Developer ID signing remains a separate future requirement.
+
+## 0.8.1 Mac app updates
+
+Settings checks this fork's published Mac preview releases. Automatic checks are optional and run at startup and every six hours. Installation is user-initiated. The updater selects a higher numeric app version, stages the ZIP on the same volume as the running bundle, verifies GitHub's HTTPS asset digest and the release checksum, and checks the bundle identifier, version, architecture and ad-hoc signature. The trusted source is this fork's GitHub release. The ad-hoc signature alone does not establish publisher identity. Install locations are ~/Applications/RoALT.app and /Applications/RoALT.app and must be writable. Permission grants may need renewal. Launches and rejoins must finish before update handoff. An older build without the updater needs one manual upgrade first.

@@ -5,8 +5,8 @@ set -euo pipefail
 fail() { printf 'RoALT: %s\n' "$*" >&2; exit 1; }
 cleanup() {
   if [[ -n "${install_stage:-}" ]]; then
-    if [[ -d "$install_stage/previous.app" && ! -e "$HOME/Applications/RoALT.app" ]]; then
-      mv "$install_stage/previous.app" "$HOME/Applications/RoALT.app" || return
+    if [[ -d "$install_stage/previous.app" && ! -e "$destination" ]]; then
+      mv "$install_stage/previous.app" "$destination" || return
     fi
     /bin/rm -rf -- "$install_stage"
   fi
@@ -32,12 +32,28 @@ reset_changed_permissions() {
 main() {
   [[ "$(uname -s)" == Darwin ]] || fail 'This installer requires macOS.'
   [[ "$(uname -m)" == arm64 ]] || fail 'This preview requires Apple Silicon. Run Terminal natively, not through Rosetta.'
-  if pgrep -x roalt >/dev/null; then fail 'Quit RoALT before installing an update.'; fi
-  local tag archive base expected actual bundle destination identifier architecture
-  tag=macos-preview-0.8.0-4
+  local tag archive base expected actual bundle identifier architecture
+  local version=0.8.1 api_digest='' parent_pid='' parent_dir
+  # Keep destination available to the EXIT trap after main returns.
+  tag=macos-preview-0.8.1-5
+  destination="$HOME/Applications/RoALT.app"
+  if [[ "${1:-}" == --in-app ]]; then
+    [[ $# == 6 ]] || fail 'Invalid update parameters.'
+    tag="$2"; version="$3"; api_digest="$4"; destination="$5"; parent_pid="$6"
+    [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && "$tag" == "macos-preview-${version}-${tag##*-}" ]] || fail 'Invalid Mac release.'
+    [[ "${tag##*-}" =~ ^[0-9]+$ && "$api_digest" =~ ^[0-9a-f]{64}$ && "$parent_pid" =~ ^[1-9][0-9]*$ ]] || fail 'Invalid update metadata.'
+    [[ "$destination" == "$HOME/Applications/RoALT.app" || "$destination" == /Applications/RoALT.app ]] || fail 'Move RoALT to Applications before updating.'
+    [[ -d "$destination" ]] || fail 'Installed app is missing.'
+  else
+    if pgrep -x roalt >/dev/null; then fail 'Quit RoALT before installing an update.'; fi
+    if [[ -e /Applications/RoALT.app ]]; then
+      [[ ! -e "$destination" ]] || fail 'There are two installed copies of RoALT. Keep one in Applications or ~/Applications and retry.'
+      destination=/Applications/RoALT.app
+    fi
+  fi
+  parent_dir="${destination%/*}"
   archive=RoALT-macOS-Apple-Silicon.zip
   base="https://github.com/cookedkid/RoALT/releases/download/$tag"
-  destination="$HOME/Applications/RoALT.app"
   [[ ! -L "$destination" ]] || fail 'The install destination is a symlink; replace it manually.'
   work_dir="$(mktemp -d "${TMPDIR:-/tmp}/roalt-download.XXXXXX")"
   install_stage=''
@@ -45,21 +61,22 @@ main() {
   trap 'exit 130' INT
   trap 'exit 143' TERM
   printf 'Downloading RoALT %s…\n' "$tag"
-  curl --fail --location --silent --show-error --proto '=https' --proto-redir '=https' --retry 2 --output "$work_dir/$archive" "$base/$archive" || fail 'The pinned Mac release could not be downloaded. Check https://github.com/cookedkid/RoALT/releases and try again.'
-  curl --fail --location --silent --show-error --proto '=https' --proto-redir '=https' --retry 2 --output "$work_dir/SHA256SUMS.txt" "$base/SHA256SUMS.txt" || fail 'Could not download the release checksum; installation stopped.'
+  curl --connect-timeout 15 --max-time 240 --max-filesize 200000000 --fail --location --silent --show-error --proto '=https' --proto-redir '=https' --retry 2 --output "$work_dir/$archive" "$base/$archive" || fail 'The pinned Mac release could not be downloaded. Check https://github.com/cookedkid/RoALT/releases and try again.'
+  curl --connect-timeout 15 --max-time 240 --max-filesize 200000000 --fail --location --silent --show-error --proto '=https' --proto-redir '=https' --retry 2 --output "$work_dir/SHA256SUMS.txt" "$base/SHA256SUMS.txt" || fail 'Could not download the release checksum; installation stopped.'
   # Require one exact filename entry. Never execute or trust paths from a checksum file.
   expected="$(awk -v name="$archive" '$2 == name { print $1; count++ } END { if (count != 1) exit 1 }' "$work_dir/SHA256SUMS.txt")" || fail 'The release checksum entry is missing or duplicated.'
   [[ "$expected" =~ ^[0-9a-fA-F]{64}$ ]] || fail 'The release checksum is not a SHA-256 value.'
   actual="$(shasum -a 256 "$work_dir/$archive")"
   actual="${actual%% *}"
   [[ "$(printf '%s' "$expected" | tr '[:upper:]' '[:lower:]')" == "$actual" ]] || fail 'The download checksum did not match; installation stopped.'
+  [[ -z "$api_digest" || "$actual" == "$api_digest" ]] || fail 'Downloaded ZIP does not match the release digest from GitHub.'
   mkdir "$work_dir/extracted"
   ditto -x -k "$work_dir/$archive" "$work_dir/extracted"
   bundle="$work_dir/extracted/RoALT.app"
   [[ -d "$bundle" && ! -L "$bundle" && -x "$bundle/Contents/MacOS/roalt" && ! -L "$bundle/Contents/MacOS/roalt" ]] || fail 'The download does not contain the expected app.'
   identifier="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$bundle/Contents/Info.plist")"
   [[ "$identifier" == com.inspectsoftware.roalt ]] || fail 'The app bundle identifier did not match.'
-  [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$bundle/Contents/Info.plist")" == 0.8.0 ]] || fail 'The app version did not match this installer.'
+  [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$bundle/Contents/Info.plist")" == "$version" ]] || fail 'The app version did not match this installer.'
   architecture="$(file -b "$bundle/Contents/MacOS/roalt")"
   case "$architecture" in
     *'Mach-O 64-bit executable arm64'*) ;;
@@ -68,16 +85,33 @@ main() {
   codesign --verify --deep --strict "$bundle" || fail 'The app signature could not be verified.'
   identifier="$(codesign --display --verbose=2 "$bundle" 2>&1 | sed -n 's/^Identifier=//p')"
   [[ "$identifier" == com.inspectsoftware.roalt ]] || fail 'The signed app identifier did not match.'
-  mkdir -p "$HOME/Applications"
-  install_stage="$(mktemp -d "$HOME/Applications/.roalt-install.XXXXXX")"
+  mkdir -p "$parent_dir"
+  install_stage="$(mktemp -d "$parent_dir/.roalt-install.XXXXXX")"
   ditto "$bundle" "$install_stage/RoALT.app"
   codesign --verify --deep --strict "$install_stage/RoALT.app"
+  if [[ -n "$parent_pid" ]]; then
+    # The app stays open during verification. EOF cancels the staged update.
+    printf 'ROALT_UPDATE_READY\n'
+    IFS= read -r decision && [[ "$decision" == install ]] || fail 'Update cancelled.'
+    exec </dev/null >/dev/null 2>&1
+    for ((i=0; i<300; i++)); do
+      kill -0 "$parent_pid" 2>/dev/null || break
+      sleep 0.1
+    done
+    ! kill -0 "$parent_pid" 2>/dev/null || fail 'RoALT did not quit.'
+  fi
   if [[ -e "$destination" ]]; then mv "$destination" "$install_stage/previous.app"; fi
   if ! mv "$install_stage/RoALT.app" "$destination"; then
     [[ ! -e "$install_stage/previous.app" ]] || mv "$install_stage/previous.app" "$destination"
     fail 'Could not install the new app; the previous app was restored.'
   fi
   reset_changed_permissions "$install_stage/previous.app" "$destination"
+  if [[ -n "$parent_pid" ]] && ! /usr/bin/open "$destination"; then
+    mv "$destination" "$install_stage/failed.app"
+    mv "$install_stage/previous.app" "$destination"
+    /usr/bin/open "$destination" || true
+    fail 'Could not open the update. Restored the previous version.'
+  fi
   printf 'Installed %s\nOpen it from Finder when ready. This preview is ad-hoc signed, not notarized; macOS permissions and Keychain approval may be needed.\n' "$destination"
 }
 main "$@"

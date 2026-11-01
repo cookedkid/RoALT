@@ -286,6 +286,11 @@ pub fn start(app: AppHandle, mut req: BulkRequest) -> Result<String> {
         }
         let last = batch.replace(Batch { progress: progress.clone(), cancel: cancel.clone() });
         // After registering: an install starting now sees this batch, one already running is seen here.
+        #[cfg(target_os = "macos")]
+        if s.self_update.installing() {
+            *batch = last;
+            return Err(AppError::Wait("RoALT is updating. Start the batch after it reopens.".into()));
+        }
         if s.update.installing() {
             *batch = last;
             return Err(AppError::Invalid(crate::commands::installing()));

@@ -1,6 +1,6 @@
 <div align="center">
 
-# RoALT for macOS — 0.8.0
+# RoALT for macOS — 0.8.1
 
 ### A native Apple Silicon port of the Roblox account manager
 
@@ -31,14 +31,14 @@ Home CPU and memory now total tracked Roblox clients. Mac memory is physical foo
 ### Still missing or different from Windows
 
 - Background/minimized anti-AFK is implemented but unverified in Roblox. Kernel CPU quotas, core affinity/spreading, memory trimming, bandwidth shaping and per-client GPU/VRAM counters remain unsupported.
-- Scheduled shutdown, Windows-style public-network classification, and automatic Roblox or RoALT installation and updates.
+- Scheduled shutdown, Windows-style public-network classification, and automatic installation and updating of Roblox itself.
 - Developer ID signing/notarization and Intel/universal builds. The Mac ZIP is an ad-hoc signed preview.
 
 Unsupported controls are hidden or rejected on macOS. See [the port notes](docs/MACOS_PORT.md) for implementation details and the remaining acceptance checks. The [original Windows repository](https://github.com/inspectsoftware/RoALT) documents Windows-specific features.
 
 ## Install on macOS
 
-**Apple Silicon only.** [Download the 0.8.0 Mac preview ZIP](https://github.com/cookedkid/RoALT/releases/download/macos-preview-0.8.0-4/RoALT-macOS-Apple-Silicon.zip), unzip it, and drag `RoALT.app` into Applications. [Release notes and checksums](https://github.com/cookedkid/RoALT/releases/tag/macos-preview-0.8.0-4).
+**Apple Silicon only.** [Download the 0.8.1 Mac preview ZIP](https://github.com/cookedkid/RoALT/releases/download/macos-preview-0.8.1-5/RoALT-macOS-Apple-Silicon.zip), unzip it, and drag `RoALT.app` into Applications. [Release notes and checksums](https://github.com/cookedkid/RoALT/releases/tag/macos-preview-0.8.1-5).
 
 Or install the same preview with one Terminal command:
 
@@ -46,11 +46,11 @@ Or install the same preview with one Terminal command:
 curl -fsSL https://raw.githubusercontent.com/cookedkid/RoALT/main/scripts/install-macos-release.sh | bash
 ```
 
-This downloads the prebuilt app into `~/Applications`. **No Rust, Node, Xcode or Homebrew is required.** The installer checks the SHA-256, app identity, version and architecture before replacing an existing app, and restores the old copy if replacement fails. When an update changes the app signature, it clears only RoALT’s old Accessibility, Screen Recording and Input Monitoring grants after successful installation. Approve those permissions again when you open the new app; saved accounts and Keychain items are preserved. Reinstalling the identical signed build leaves grants alone. It does not launch RoALT. You can read [the installer](scripts/install-macos-release.sh) first.
+This updates your existing copy in `/Applications` or `~/Applications`. A fresh install goes into `~/Applications`. If both folders have a copy, keep one before running the installer. **No Rust, Node, Xcode or Homebrew is required.** The installer checks the SHA-256, app identity, version and architecture before replacing an existing app, and restores the old copy if replacement fails. When an update changes the app signature, it clears only RoALT’s old Accessibility, Screen Recording and Input Monitoring grants after successful installation. Approve those permissions again when you open the new app; saved accounts and Keychain items are preserved. Reinstalling the identical signed build leaves grants alone. It does not launch RoALT. You can read [the installer](scripts/install-macos-release.sh) first.
 
 The preview is ad-hoc signed and not notarized. macOS may require approval to open it or access an existing RoALT Keychain item. Approve requested Accessibility, Screen Recording and Input Monitoring access yourself, then restart RoALT. Anti-AFK remains off until enabled.
 
-RoALT does not yet check for or install updates inside the Mac app. New versions require a replacement download or an updated installer command; this command currently installs preview 0.8.0.
+Starting with 0.8.1, open **Settings → Check now** for Mac releases. Enable the RoALT update switch for optional background checks. Click **Update** to verify and install a newer version, then reopen the app automatically. RoALT replaces the running copy in its current Applications folder. Older builds need the Terminal installer or ZIP once to gain this feature.
 
 <details>
 <summary>Build from source instead</summary>

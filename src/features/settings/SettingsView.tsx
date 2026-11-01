@@ -308,7 +308,7 @@ export function SettingsView({ vault, settings, onPerformance, onRecoveryCode }:
         </Section>
 
         <Section id="about" title={t("settings.section.about")}>
-        {IS_MAC ? <Row title={t("settings.selfUpdate")} hint="Download and replace RoALT to update this Mac preview. Automatic updates are not available.">{null}</Row> : <SelfUpdateRow on={settings.selfUpdate} onChange={(selfUpdate) => set.mutate({ selfUpdate })} />}
+        <SelfUpdateRow on={settings.selfUpdate} onChange={(selfUpdate) => set.mutate({ selfUpdate })} />
         <Row title={<>RoALT <span className="mono">{import.meta.env.APP_VERSION}</span></>} hint={t("settings.aboutHint")} last>
           <button className="btn" onClick={() => openUrl(RELEASES).catch(toastError)}>
             {t("settings.openReleases")}
@@ -901,7 +901,7 @@ function SelfUpdateRow({ on, onChange }: { on: boolean; onChange: (on: boolean) 
   return (
     <Row
       title={t("settings.selfUpdate")}
-      hint={t("settings.selfUpdateHint")}
+      hint={IS_MAC ? "Check this Mac fork at startup and every six hours, or check now. Choose Update to download, verify, and reopen the app. macOS may ask for permissions again." : t("settings.selfUpdateHint")}
     >
       <span className="flex flex-wrap items-center gap-3">
         {result && <span className="text-xs text-dim" role="status">{result}</span>}

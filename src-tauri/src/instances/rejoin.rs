@@ -243,6 +243,10 @@ async fn attempt(app: &AppHandle, s: &App, r: &Rejoin, user_id: Option<i64>, kil
     if over(*closed) {
         return None;
     }
+    #[cfg(target_os = "macos")]
+    if s.self_update.installing() {
+        return Some("Waiting for the RoALT update to finish.".into());
+    }
     if s.update.installing() {
         return Some(commands::installing());
     }

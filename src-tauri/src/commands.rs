@@ -817,6 +817,10 @@ pub(crate) async fn launch_tracked(
     }
     let _busy = s.bulk.begin_launch();
     // After `_busy`: an install starting now sees this launch, one already running is seen here.
+    #[cfg(target_os = "macos")]
+    if s.self_update.installing() {
+        return Err(AppError::Wait("RoALT is updating. Try again after it reopens.".into()));
+    }
     if s.update.installing() {
         return Err(AppError::Wait(installing()));
     }
@@ -2364,7 +2368,7 @@ pub(crate) fn apply_performance(v: &mut Settings, patch: &SettingsPatch) -> Resu
 #[tauri::command]
 pub fn settings_set(app: AppHandle, s: State<'_, App>, patch: SettingsPatch) -> Result<Settings> {
     #[cfg(target_os = "macos")]
-    if patch.auto_update==Some(true) || patch.self_update==Some(true)
+    if patch.auto_update==Some(true)
       {
        return Err(AppError::Invalid("This Windows-specific option is unavailable in the macOS build.".into()));
     }
