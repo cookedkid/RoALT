@@ -12,6 +12,23 @@ cleanup() {
   fi
   [[ -z "${work_dir:-}" ]] || /bin/rm -rf -- "$work_dir"
 }
+# Ad-hoc signatures change between builds. TCC can display an enabled old grant
+# while refusing the replacement binary. Reset only RoALT, only after installation.
+reset_changed_permissions() {
+  local previous="$1" current="$2" old_hash new_hash service
+  [[ -d "$previous" ]] || return 0
+  old_hash="$(codesign --display --verbose=2 "$previous" 2>&1 | sed -n 's/^CDHash=//p')" || old_hash=''
+  new_hash="$(codesign --display --verbose=2 "$current" 2>&1 | sed -n 's/^CDHash=//p')" || new_hash=''
+  if [[ -n "$old_hash" && "$old_hash" == "$new_hash" ]]; then return 0; fi
+  printf 'RoALT signing identity changed. Clearing its old Accessibility, Screen Recording and Input Monitoring grants.\n'
+  for service in Accessibility ScreenCapture ListenEvent; do
+    if ! tccutil reset "$service" com.inspectsoftware.roalt; then
+      printf 'Could not reset %s. To repair it, quit RoALT and run: tccutil reset %s com.inspectsoftware.roalt\n' "$service" "$service" >&2
+    fi
+  done
+  printf 'Open RoALT and approve its new permissions in System Settings, then quit and reopen it. Saved accounts and Keychain items were not changed.\n'
+}
+
 main() {
   [[ "$(uname -s)" == Darwin ]] || fail 'This installer requires macOS.'
   [[ "$(uname -m)" == arm64 ]] || fail 'This preview requires Apple Silicon. Run Terminal natively, not through Rosetta.'
@@ -60,6 +77,7 @@ main() {
     [[ ! -e "$install_stage/previous.app" ]] || mv "$install_stage/previous.app" "$destination"
     fail 'Could not install the new app; the previous app was restored.'
   fi
+  reset_changed_permissions "$install_stage/previous.app" "$destination"
   printf 'Installed %s\nOpen it from Finder when ready. This preview is ad-hoc signed, not notarized; macOS permissions and Keychain approval may be needed.\n' "$destination"
 }
 main "$@"
