@@ -466,7 +466,7 @@ impl Default for Settings {
             anti_afk: AntiAfk::default(),
             discord: DiscordEvents::default(),
             auto_update: false,
-            self_update: cfg!(windows),
+            self_update: true,
             discord_presence: true,
             minimize_on_launch: false,
             panic_hotkey: String::new(),

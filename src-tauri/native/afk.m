@@ -40,26 +40,83 @@ int ro_afk_ready(void){
  if(!input_tap){CGEventMask mask=CGEventMaskBit(kCGEventKeyDown)|CGEventMaskBit(kCGEventKeyUp)|CGEventMaskBit(kCGEventFlagsChanged)|CGEventMaskBit(kCGEventMouseMoved)|CGEventMaskBit(kCGEventLeftMouseDown)|CGEventMaskBit(kCGEventRightMouseDown)|CGEventMaskBit(kCGEventOtherMouseDown)|CGEventMaskBit(kCGEventScrollWheel)|CGEventMaskBit(kCGEventLeftMouseUp)|CGEventMaskBit(kCGEventRightMouseUp)|CGEventMaskBit(kCGEventOtherMouseUp)|CGEventMaskBit(kCGEventOtherMouseDragged)|CGEventMaskBit(kCGEventLeftMouseDragged)|CGEventMaskBit(kCGEventRightMouseDragged);input_tap=CGEventTapCreate(kCGSessionEventTap,kCGHeadInsertEventTap,kCGEventTapOptionListenOnly,mask,observe,NULL);if(input_tap){atomic_store(&last_input,now_ns());pthread_t thread;if(pthread_create(&thread,NULL,listen_input,NULL)){CFRelease(input_tap);input_tap=NULL;}else pthread_detach(thread);}}
  int result=input_tap?0:-2;pthread_mutex_unlock(&setup_lock);return result;
 }
-static void restore_focus(NSRunningApplication *previous,int pid,uint64_t before) {
- if(previous && atomic_load(&last_input)==before && NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier==pid)
-  [previous activateWithOptions:NSApplicationActivateIgnoringOtherApps];
-}
 static BOOL same(int pid,uint64_t start){struct proc_bsdinfo b={0};return proc_pidinfo(pid,PROC_PIDTBSDINFO,0,&b,sizeof(b))==sizeof(b)&&b.pbi_uid==getuid()&&b.pbi_start_tvsec==start;}
+static bool window_point(AXUIElementRef window, CGPoint *center) {
+ CFTypeRef position=NULL, size=NULL;
+ AXUIElementCopyAttributeValue(window,kAXPositionAttribute,&position);
+ AXUIElementCopyAttributeValue(window,kAXSizeAttribute,&size);
+ CGPoint origin; CGSize extent;
+ bool ok=position && size && CFGetTypeID(position)==AXValueGetTypeID() &&
+     CFGetTypeID(size)==AXValueGetTypeID() && AXValueGetValue(position,kAXValueCGPointType,&origin) &&
+     AXValueGetValue(size,kAXValueCGSizeType,&extent) && extent.width>0 && extent.height>60;
+ if(ok) *center=CGPointMake(origin.x+extent.width/2,origin.y+extent.height/2);
+ if(position) CFRelease(position);
+ if(size) CFRelease(size);
+ return ok;
+}
+
+static int focus_click(int pid,uint64_t start,uint64_t before) {
+ NSRunningApplication *previous=NSWorkspace.sharedWorkspace.frontmostApplication;
+ NSRunningApplication *target=[NSRunningApplication runningApplicationWithProcessIdentifier:pid];
+ AXUIElementRef root=AXUIElementCreateApplication(pid);
+ AXUIElementSetMessagingTimeout(root,0.5);
+ CFTypeRef windows=NULL;
+ AXUIElementCopyAttributeValue(root,kAXWindowsAttribute,&windows);
+ CFRelease(root);
+ if(!windows) return 2;
+ int result=2;
+ for(CFIndex i=0;i<CFArrayGetCount(windows);i++){
+  AXUIElementRef window=(AXUIElementRef)CFArrayGetValueAtIndex(windows,i);
+  CGPoint center;
+  if(!window_point(window,&center)) continue;
+  if(!same(pid,start)||atomic_load(&last_input)!=before) break;
+  CFTypeRef mini=NULL;
+  AXUIElementCopyAttributeValue(window,kAXMinimizedAttribute,&mini);
+  if(!mini) continue;
+  bool was_minimized=CFEqual(mini,kCFBooleanTrue);
+  CFRelease(mini);
+  if(was_minimized && AXUIElementSetAttributeValue(window,kAXMinimizedAttribute,kCFBooleanFalse)!=kAXErrorSuccess) continue;
+  [target activateWithOptions:NSApplicationActivateIgnoringOtherApps];
+  AXUIElementPerformAction(window,kAXRaiseAction);
+  usleep(150000);
+  result=1;
+  if(same(pid,start) && atomic_load(&last_input)==before &&
+     NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier==pid && window_point(window,&center)){
+   CGEventRef down=CGEventCreateMouseEvent(NULL,kCGEventLeftMouseDown,center,kCGMouseButtonLeft);
+   CGEventRef up=CGEventCreateMouseEvent(NULL,kCGEventLeftMouseUp,center,kCGMouseButtonLeft);
+   result=-1;
+   if(down && up){
+    CGEventSetIntegerValueField(down,kCGEventSourceUserData,marker);
+    CGEventSetIntegerValueField(up,kCGEventSourceUserData,marker);
+    CGEventPostToPid(pid,down);
+    CGEventPostToPid(pid,up);
+    usleep(1000000);
+    result=0;
+   }
+   if(down) CFRelease(down);
+   if(up) CFRelease(up);
+  }
+  if(atomic_load(&last_input)==before && same(pid,start)){
+   bool front=NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier==pid;
+   if((result==0 && front)||was_minimized)
+    AXUIElementSetAttributeValue(window,kAXMinimizedAttribute,kCFBooleanTrue);
+   if(front && previous.processIdentifier!=pid) [previous activateWithOptions:NSApplicationActivateIgnoringOtherApps];
+  }
+  break;
+ }
+ CFRelease(windows);
+ return result;
+}
+
 int ro_afk_press_mode(int pid,uint64_t start,bool background,int keycode){@autoreleasepool{
  if(keycode!=48&&keycode!=49)return -3;
  if(!same(pid,start))return 2;if(ro_afk_ready()!=0)return -2;uint64_t before=atomic_load(&last_input);if(now_ns()-before<5000000000ULL||!CGEventTapIsEnabled(input_tap))return 1;if(!same(pid,start))return 2;
- NSRunningApplication *previous=nil;
- if(!background){
- AXUIElementRef root=AXUIElementCreateApplication(pid);AXUIElementSetMessagingTimeout(root,0.5);CFTypeRef windows=NULL;AXUIElementCopyAttributeValue(root,kAXWindowsAttribute,&windows);CFRelease(root);if(!windows)return 2;
- BOOL visible=NO;for(CFIndex i=0;i<CFArrayGetCount(windows);i++){CFTypeRef mini=NULL;if(AXUIElementCopyAttributeValue((AXUIElementRef)CFArrayGetValueAtIndex(windows,i),kAXMinimizedAttribute,&mini)==kAXErrorSuccess&&mini){visible=!CFBooleanGetValue(mini);CFRelease(mini);if(visible)break;}}CFRelease(windows);if(!visible)return 2;
- previous=NSWorkspace.sharedWorkspace.frontmostApplication;NSRunningApplication *target=[NSRunningApplication runningApplicationWithProcessIdentifier:pid];if(!target||target.hidden)return 2;if(atomic_load(&last_input)!=before||![target activateWithOptions:NSApplicationActivateIgnoringOtherApps])return 1;
- usleep(50000);if(atomic_load(&last_input)!=before||NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier!=pid||!same(pid,start))return 1;
- }
+ if(!background) return focus_click(pid,start,before);
  CGKeyCode key=(CGKeyCode)keycode;
- CGEventSourceRef source=CGEventSourceCreate(kCGEventSourceStatePrivate);if(!source){restore_focus(previous,pid,before);return -1;}CGEventRef down=CGEventCreateKeyboardEvent(source,key,true),up=CGEventCreateKeyboardEvent(source,key,false);if(source)CFRelease(source);if(!down||!up){if(down)CFRelease(down);if(up)CFRelease(up);restore_focus(previous,pid,before);return -1;}
+ CGEventSourceRef source=CGEventSourceCreate(kCGEventSourceStatePrivate);if(!source){return -1;}CGEventRef down=CGEventCreateKeyboardEvent(source,key,true),up=CGEventCreateKeyboardEvent(source,key,false);if(source)CFRelease(source);if(!down||!up){if(down)CFRelease(down);if(up)CFRelease(up);return -1;}
  CGEventSetIntegerValueField(down,kCGEventSourceUserData,marker);CGEventSetIntegerValueField(up,kCGEventSourceUserData,marker);
  // Both edges target the verified client PID, never whichever app happens to be frontmost.
  if(atomic_load(&last_input)!=before||!same(pid,start)){CFRelease(down);CFRelease(up);return 1;}
  CGEventPostToPid(pid,down);usleep(20000);if(same(pid,start))CGEventPostToPid(pid,up);CFRelease(down);CFRelease(up);
- BOOL interrupted=atomic_load(&last_input)!=before;if(!background&&!interrupted&&NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier==pid)[previous activateWithOptions:NSApplicationActivateIgnoringOtherApps];return interrupted?1:0;
+ return atomic_load(&last_input)!=before?1:0;
 }}

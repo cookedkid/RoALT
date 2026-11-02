@@ -150,6 +150,8 @@ fn status(instances: &[Instance], game_name: impl Fn(i64) -> Option<String>) -> 
 
 /// The full activity for `status`, with the time that status began.
 fn activity((details, state): &(String, String), since_ms: i64) -> Value {
+    #[cfg(target_os = "macos")]
+    let details = format!("RoALT Mac · {details}");
     json!({
         "details": details,
         "state": state,
