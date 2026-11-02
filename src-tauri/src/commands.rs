@@ -2296,19 +2296,19 @@ pub async fn performance_export(s: State<'_, App>, path: String, preview_fps: Op
 /// The profile in the file at `path`, checked; nothing is saved (the UI shows it, then saves it
 /// through `settings_set`).
 #[tauri::command]
-pub async fn performance_read(s: State<'_, App>, path: String) -> Result<crate::performance::Profile> {
+pub async fn performance_read(s: State<'_, App>, path: String) -> Result<crate::performance::Imported> {
     let refused = || AppError::Invalid(tr!("This isn't a RoALT performance profile."));
     if std::fs::metadata(&path)?.len() > crate::performance::MAX_BYTES as u64 {
         return Err(refused());
     }
     let text = std::fs::read_to_string(&path).map_err(|_| refused())?;
-    crate::performance::parse(&text, &s.db.settings()?)
+    crate::performance::import_profile(&text, &s.db.settings()?)
 }
 
 /// As `performance_read`, for a profile's text (a pasted share code, decoded by the UI).
 #[tauri::command]
-pub fn performance_parse(s: State<'_, App>, text: String) -> Result<crate::performance::Profile> {
-    crate::performance::parse(&text, &s.db.settings()?)
+pub fn performance_parse(s: State<'_, App>, text: String) -> Result<crate::performance::Imported> {
+    crate::performance::import_profile(&text, &s.db.settings()?)
 }
 
 /// The performance part of a settings change, checked and applied to `v` (no side effects): also

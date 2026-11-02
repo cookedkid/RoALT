@@ -372,7 +372,7 @@ export function SettingsView({ vault, settings, onPerformance, onRecoveryCode }:
         >
           <Switch label={t("settings.antiAfk")} checked={settings.antiAfk.enabled} onChange={(enabled) => set.mutate({ antiAfk: { ...settings.antiAfk, enabled } })} />
         </Row>
-        {settings.antiAfk.enabled && (
+        {!IS_MAC && settings.antiAfk.enabled && (
           <Row
             title={t("settings.antiAfkHow")}
             hint={

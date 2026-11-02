@@ -56,7 +56,7 @@ jobs:
 
           This app is ad-hoc signed, not Developer ID signed or notarized. macOS may require approval to open the app and access Keychain. Grant Accessibility, Screen Recording and Input Monitoring when needed.
 
-          Background anti-AFK is experimental: sending an event does not prove Roblox counted it or prevented an idle kick. See MACOS_README.md for supported features and limitations. Intel Macs are not supported by this build.
+          Mac anti-AFK brings the game forward, clicks, then minimizes it. Games may handle the click differently. See MACOS_README.md for supported features and limitations. Intel Macs are not supported by this build.
           NOTES
           if gh release view "$tag" >/dev/null 2>&1; then
             echo "Release $tag already exists; leaving its assets unchanged."

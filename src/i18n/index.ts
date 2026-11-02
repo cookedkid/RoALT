@@ -90,7 +90,7 @@ export const isRtl = () => lang === "ar";
 // Platform-specific security copy must describe the actual credential provider.
 const macCopy: Partial<Record<Key, string>> = {
  "settings.antiAfkBackgroundHint": "Experimental: send the selected key directly to tracked Roblox processes without changing focus, including minimized clients. Skips recent human activity. Posting does not confirm game acceptance or prevent idle kicks reliably.",
- "settings.antiAfkHint": "Opt-in: send background input or focus and click tracked clients while you are idle. Requires Accessibility and Input Monitoring in System Settings → Privacy & Security; restart RoALT after granting permissions.",
+ "settings.antiAfkHint": "Opt-in: bring tracked clients forward, click, and minimize them while you are idle. Requires Accessibility and Input Monitoring in System Settings → Privacy & Security; restart RoALT after granting permissions.",
  "settings.antiAfkFocusHint": "After 5 seconds without keyboard or mouse activity, bring each due client forward, click the center of its window, then minimize it one second later. Manual input interrupts the round. Game acceptance is not guaranteed.",
  "dashboard.previewFpsHint": "Window-only captures require Screen Recording permission. Lower rates save CPU. Minimized windows have no live preview.",
  "launch.limits.cpu": "Cooperative CPU cap (% of whole Mac)",

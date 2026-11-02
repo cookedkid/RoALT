@@ -2,7 +2,7 @@ import { MacOptions } from "./MacOptions";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { open as openFile, save as saveFile } from "@tauri-apps/plugin-dialog";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
-import { api, asError, type AccountSummary, type Profile, type Settings } from "../../api";
+import { api, asError, type AccountSummary, type Profile as SettingsProfile, type Settings } from "../../api";
 import type { RenderFlags } from "../../bindings/RenderFlags";
 import { useAccounts, useSetSettings, useUpdateAccount } from "../../data";
 import { NumberField, Segmented, Switch } from "../../ui/controls";
@@ -14,11 +14,15 @@ import { accountName } from "../accounts/shared";
 import { BandwidthRow, Row } from "../settings/SettingsView";
 import { PREVIEW_FPS, setPreviewFps, storedFps, usePreviewFps, type PreviewFps } from "../dashboard/previewFps";
 
+type Profile = SettingsProfile & { sourceLabel?: string };
+
 const IS_MAC = navigator.platform.startsWith("Mac");
 
 const profileFilter = () => [{ name: t("performance.profileFilter"), extensions: ["json"] }];
 /** A share code: this prefix, then the profile's JSON as base64url. */
-const CODE = "RoALT-PERF:";
+const LEGACY_CODE = "RoALT-PERF:";
+const MAC_CODE = "RoALT-MAC-PERF:";
+const CODE = IS_MAC ? MAC_CODE : LEGACY_CODE;
 
 function toCode(json: string) {
   const bytes = new TextEncoder().encode(json);
@@ -28,9 +32,10 @@ function toCode(json: string) {
 /** The profile's JSON in a share code; null when it isn't one. */
 function fromCode(code: string): string | null {
   const body = code.trim();
-  if (!body.startsWith(CODE)) return null;
+  const prefix = [MAC_CODE, LEGACY_CODE].find((value) => body.startsWith(value));
+  if (!prefix) return null;
   try {
-    const b64 = body.slice(CODE.length).replace(/\s+/g, "").replace(/-/g, "+").replace(/_/g, "/");
+    const b64 = body.slice(prefix.length).replace(/\s+/g, "").replace(/-/g, "+").replace(/_/g, "/");
     return new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)));
   } catch {
     return null;
@@ -333,9 +338,19 @@ function isApplied(profile: Profile, settings: Settings) {
 function ShareRow({ onProfile }: { onProfile: (p: Profile) => void }) {
   const [pasteOpen, setPasteOpen] = useState(false);
 
+  const [exportCode, setExportCode] = useState("");
+
+  async function openExport() {
+    try {
+      setExportCode(toCode(await api.performanceProfile(storedFps())));
+    } catch (error) {
+      toastError(error);
+    }
+  }
+
   async function exportFile() {
     try {
-      const path = await saveFile({ defaultPath: `RoALT-performance-${new Date().toISOString().slice(0, 10)}.json`, filters: profileFilter() });
+      const path = await saveFile({ defaultPath: `RoALT-${IS_MAC ? "Mac-" : ""}performance-${new Date().toISOString().slice(0, 10)}.json`, filters: profileFilter() });
       if (!path) return;
       await api.performanceExport(path, storedFps());
       toast(t("performance.exported"));
@@ -353,9 +368,9 @@ function ShareRow({ onProfile }: { onProfile: (p: Profile) => void }) {
     }
   }
 
-  async function copyCode() {
+  async function copyCode(code?: string) {
     try {
-      await writeText(toCode(await api.performanceProfile(storedFps())));
+      await writeText(code ?? toCode(await api.performanceProfile(storedFps())));
       toast(t("performance.codeCopied"));
     } catch (e) {
       toastError(e);
@@ -369,11 +384,24 @@ function ShareRow({ onProfile }: { onProfile: (p: Profile) => void }) {
         <p className="text-[13px] text-dim mt-1">{t("performance.shareHint")}</p>
       </div>
       <div className="flex flex-wrap gap-3">
-        <button className="btn" onClick={copyCode}>{t("performance.copyCode")}</button>
+        <button className="btn" onClick={() => void copyCode()}>{t("performance.copyCode")}</button>
         <button className="btn" onClick={() => setPasteOpen(true)}>{t("performance.pasteCode")}</button>
-        <button className="btn btn-ghost" onClick={exportFile}>{t("performance.export")}</button>
+        <button className="btn btn-ghost" onClick={openExport}>Export…</button>
         <button className="btn btn-ghost" onClick={importFile}>{t("performance.import")}</button>
       </div>
+      <Dialog open={!!exportCode} onClose={() => setExportCode("")} title="Export performance settings">
+        <div className="flex flex-col gap-4 p-5">
+          <label className="flex flex-col gap-1.5">
+            <span className="label">{t("performance.pasteLabel")}</span>
+            <textarea className="field mono text-xs" rows={4} readOnly value={exportCode}
+              onFocus={(event) => event.currentTarget.select()} spellCheck={false} />
+          </label>
+          <div className="flex justify-end gap-2">
+            <button className="btn btn-ghost" onClick={exportFile}>{t("performance.export")}</button>
+            <button className="btn btn-primary" onClick={() => void copyCode(exportCode)}>{t("performance.copyCode")}</button>
+          </div>
+        </div>
+      </Dialog>
       <PasteDialog open={pasteOpen} onClose={() => setPasteOpen(false)} onProfile={(p) => { setPasteOpen(false); onProfile(p); }} />
     </section>
   );
@@ -431,7 +459,7 @@ function PasteDialog({ open, onClose, onProfile }: { open: boolean; onClose: () 
   );
 }
 
-type Field = Exclude<keyof Profile, "previewFps">;
+type Field = Exclude<keyof SettingsProfile, "previewFps">;
 const LABELS: Record<Field, Key> = {
   fpsCap: "settings.fpsCap",
   lowGraphics: "settings.lowGraphics",
@@ -494,7 +522,7 @@ function ReviewDialog({ profile, settings, onClose }: { profile: Profile | null;
     setBusy(true);
     setError(null);
     try {
-      const { previewFps, ...patch } = profile;
+      const { previewFps, sourceLabel: _source, ...patch } = profile;
       await set.mutateAsync(patch);
       for (const a of clearing) await update.mutateAsync({ id: a.id, patch: { fpsCap: 0 } });
       if (previewFps) setPreviewFps(previewFps as PreviewFps);
@@ -510,6 +538,7 @@ function ReviewDialog({ profile, settings, onClose }: { profile: Profile | null;
   return (
     <Dialog open={profile !== null} onClose={onClose} title={t("performance.reviewTitle")} width={480}>
       <div className="flex flex-col gap-4 px-5 pb-5">
+        {profile?.sourceLabel && <p className="text-dim">{profile.sourceLabel}</p>}
         {changes.length === 0 ? (
           <p className="text-dim">{t("performance.profileSame")}</p>
         ) : (

@@ -542,9 +542,9 @@ function AfkPanel() {
     <section aria-labelledby="afk-title" className="panel flex flex-wrap items-center gap-x-5 gap-y-3 px-5 py-4">
       <div className="flex-[1_1_320px] min-w-0">
         <h2 id="afk-title" className="section-title">{t("settings.antiAfk")}</h2>
-        <p className="text-dim text-[13px] mt-1">{afk.enabled ? (afk.mode === "focus" ? t("settings.antiAfkFocusHint") : t("settings.antiAfkBackgroundHint")) : t("settings.antiAfkHint")}</p>
+        <p className="text-dim text-[13px] mt-1">{afk.enabled ? (IS_MAC || afk.mode === "focus" ? t("settings.antiAfkFocusHint") : t("settings.antiAfkBackgroundHint")) : t("settings.antiAfkHint")}</p>
       </div>
-      {afk.enabled && (
+      {!IS_MAC && afk.enabled && (
         <Segmented
           label={t("settings.antiAfkMode")}
           value={afk.mode}

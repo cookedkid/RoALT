@@ -83,6 +83,10 @@ struct File {
     #[serde(default)]
     exported_at: i64,
     #[serde(default)]
+    platform: Option<String>,
+    #[serde(default)]
+    app_version: Option<String>,
+    #[serde(default)]
     settings: Profile,
 }
 
@@ -109,7 +113,7 @@ pub fn of(v: &Settings, preview_fps: Option<u32>, now_ms: i64) -> String {
         adaptive: Some(without_cores(v.adaptive)),
         preview_fps: preview_fps.filter(|f| PREVIEW_FPS.contains(f)),
     };
-    let file = File { format: FORMAT.into(), version: VERSION, exported_at: now_ms, settings };
+    let file = File { format: FORMAT.into(), version: VERSION, exported_at: now_ms, platform: Some(std::env::consts::OS.into()), app_version: Some(env!("CARGO_PKG_VERSION").into()), settings };
     serde_json::to_string_pretty(&file).expect("plain data serializes")
 }
 
@@ -141,7 +145,20 @@ fn patch_of(p: &Profile) -> SettingsPatch {
 
 /// The profile in `text`, checked against the rules Settings applies to `current` (pure; nothing is
 /// saved). Unknown keys are ignored; a preview rate the Dashboard doesn't offer is dropped.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Imported {
+    #[serde(flatten)]
+    settings: Profile,
+    source_label: String,
+}
+
+#[cfg(test)]
 pub fn parse(text: &str, current: &Settings) -> Result<Profile> {
+    Ok(import_profile(text, current)?.settings)
+}
+
+pub fn import_profile(text: &str, current: &Settings) -> Result<Imported> {
     if text.len() > MAX_BYTES {
         return Err(not_a_profile());
     }
@@ -156,7 +173,13 @@ pub fn parse(text: &str, current: &Settings) -> Result<Profile> {
     p.adaptive = p.adaptive.map(without_cores);
     crate::commands::apply_performance(&mut current.clone(), &patch_of(&p))?;
     p.preview_fps = p.preview_fps.filter(|f| PREVIEW_FPS.contains(f));
-    Ok(p)
+    let app = match file.platform.as_deref() {
+        Some("macos") => "RoALT Mac",
+        Some("windows") => "RoALT Windows",
+        _ => "RoALT",
+    };
+    let version = file.app_version.as_deref().unwrap_or("· Version unknown");
+    Ok(Imported { settings: p, source_label: format!("Made with {app} {version}") })
 }
 
 #[cfg(test)]
@@ -166,7 +189,11 @@ mod tests {
     #[test]
     fn a_profile_round_trips() {
         let v = Settings { fps_cap: 30, mem_restart_mb: 2048, fair_cap: true, ..Settings::default() };
-        let p = parse(&of(&v, Some(5), 1), &Settings::default()).unwrap();
+        let exported = of(&v, Some(5), 1);
+        let metadata: serde_json::Value = serde_json::from_str(&exported).unwrap();
+        assert_eq!(metadata["platform"], std::env::consts::OS);
+        assert_eq!(metadata["appVersion"], env!("CARGO_PKG_VERSION"));
+        let p = parse(&exported, &Settings::default()).unwrap();
         assert_eq!(p.fps_cap, Some(30));
         assert_eq!(p.mem_restart_mb, Some(2048));
         assert_eq!(p.lighter_rendering, Some(cfg!(windows)));

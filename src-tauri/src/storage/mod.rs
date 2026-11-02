@@ -483,7 +483,7 @@ impl Db {
         let sql = "SELECT value FROM settings WHERE key = 'settings'";
         let json: Option<String> = self.conn().query_row(sql, [], |r| r.get(0)).optional()?;
         // The JSON may hold secrets (webhook URLs): only where it broke is logged.
-        Ok(json
+        let settings: Settings = json
             .and_then(|j| {
                 serde_json::from_str(&j)
                     .inspect_err(|e| {
@@ -492,7 +492,17 @@ impl Db {
                     .ok()
                     .or_else(|| readable_settings(&j))
             })
-            .unwrap_or_default())
+            .unwrap_or_default();
+        #[cfg(target_os = "macos")]
+        let settings = {
+            let mut s = settings;
+            if s.anti_afk.mode == crate::model::AfkMode::Background {
+                s.anti_afk.mode = crate::model::AfkMode::Focus;
+                s.anti_afk.enabled = false;
+            }
+            s
+        };
+        Ok(settings)
     }
 
     pub fn save_settings(&self, s: &Settings) -> Result<()> {

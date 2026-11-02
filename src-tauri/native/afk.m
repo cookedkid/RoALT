@@ -108,15 +108,7 @@ static int focus_click(int pid,uint64_t start,uint64_t before) {
  return result;
 }
 
-int ro_afk_press_mode(int pid,uint64_t start,bool background,int keycode){@autoreleasepool{
- if(keycode!=48&&keycode!=49)return -3;
+int ro_afk_click(int pid,uint64_t start){@autoreleasepool{
  if(!same(pid,start))return 2;if(ro_afk_ready()!=0)return -2;uint64_t before=atomic_load(&last_input);if(now_ns()-before<5000000000ULL||!CGEventTapIsEnabled(input_tap))return 1;if(!same(pid,start))return 2;
- if(!background) return focus_click(pid,start,before);
- CGKeyCode key=(CGKeyCode)keycode;
- CGEventSourceRef source=CGEventSourceCreate(kCGEventSourceStatePrivate);if(!source){return -1;}CGEventRef down=CGEventCreateKeyboardEvent(source,key,true),up=CGEventCreateKeyboardEvent(source,key,false);if(source)CFRelease(source);if(!down||!up){if(down)CFRelease(down);if(up)CFRelease(up);return -1;}
- CGEventSetIntegerValueField(down,kCGEventSourceUserData,marker);CGEventSetIntegerValueField(up,kCGEventSourceUserData,marker);
- // Both edges target the verified client PID, never whichever app happens to be frontmost.
- if(atomic_load(&last_input)!=before||!same(pid,start)){CFRelease(down);CFRelease(up);return 1;}
- CGEventPostToPid(pid,down);usleep(20000);if(same(pid,start))CGEventPostToPid(pid,up);CFRelease(down);CFRelease(up);
- return atomic_load(&last_input)!=before?1:0;
+ return focus_click(pid,start,before);
 }}

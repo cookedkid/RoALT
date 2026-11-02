@@ -1,6 +1,6 @@
 <div align="center">
 
-# RoALT for macOS — 0.8.2
+# RoALT for macOS — 0.8.3
 
 ### A native Apple Silicon port of the Roblox account manager
 
@@ -26,11 +26,11 @@ Home CPU and memory now total tracked Roblox clients. Mac memory is physical foo
 | Launch and multi-instance | Native Roblox launch, multiple clients, batches and shared sign-in protection are ported. Two test clients ran together, but simultaneous authenticated game joins still need user testing. |
 | Performance | CPU and memory monitoring, background priority, FPS and low graphics settings, and cooperative CPU caps are ported. CPU caps can cause stutter and are not kernel quotas. |
 | Windows and previews | Focus, minimize/restore, tiling, tiny windows and live previews are ported. Accessibility and Screen Recording permission are required. Preview rates are 2, 5 or 10 FPS. |
-| Anti-AFK | Opt-in focus and experimental background modes send configurable Tab/Space input to tracked clients. Background mode does not move or focus windows. Focus mode clicks the center of the game window and minimizes it one second later. Both skip recent human input. Game acceptance and 20-minute idle prevention still need manual testing. |
+| Anti-AFK | While you are idle, RoALT brings a tracked game forward, clicks its center, and minimizes it a second later. |
 
 ### Still missing or different from Windows
 
-- Background/minimized anti-AFK is implemented but unverified in Roblox. Kernel CPU quotas, core affinity/spreading, memory trimming, bandwidth shaping and per-client GPU/VRAM counters remain unsupported.
+- Kernel CPU quotas, core affinity/spreading, memory trimming, bandwidth shaping and per-client GPU/VRAM counters remain unsupported.
 - Scheduled shutdown, Windows-style public-network classification, and automatic installation and updating of Roblox itself.
 - Developer ID signing/notarization and Intel/universal builds. The Mac ZIP is an ad-hoc signed preview.
 
@@ -38,7 +38,7 @@ Unsupported controls are hidden or rejected on macOS. See [the port notes](docs/
 
 ## Install on macOS
 
-**Apple Silicon only.** [Download the 0.8.1 Mac preview ZIP](https://github.com/cookedkid/RoALT/releases/download/macos-preview-0.8.1-5/RoALT-macOS-Apple-Silicon.zip), unzip it, and drag `RoALT.app` into Applications. [Release notes and checksums](https://github.com/cookedkid/RoALT/releases/tag/macos-preview-0.8.1-5).
+**Apple Silicon only.** Download `RoALT-macOS-Apple-Silicon.zip` from the [newest Mac preview release](https://github.com/cookedkid/RoALT/releases), unzip it, and drag `RoALT.app` into Applications.
 
 Or install the same preview with one Terminal command:
 
@@ -67,7 +67,7 @@ The source installer builds the current `main` branch, verifies the app and inst
 
 ### New Mac controls
 
-Performance → Mac background behavior offers Tab/Space selection, an opt-in focus fallback for detectable event-creation failures, and an App Nap override for Roblox. App Nap changes affect all Roblox clients on their next launch and may increase power use. Disabling the override restores the previous preference. Efficiency-only adaptive limits lower CPU/I/O priority without deliberate pauses; core placement remains controlled by macOS. System GPU utilization appears in Home and Monitor only when the driver reports it, and is never attributed to individual clients.
+Performance → Mac background behavior offers an App Nap override for Roblox. App Nap changes affect all Roblox clients on their next launch and may increase power use. Disabling the override restores the previous preference. Efficiency-only adaptive limits lower CPU/I/O priority without deliberate pauses; core placement remains controlled by macOS. System GPU utilization appears in Home and Monitor only when the driver reports it, and is never attributed to individual clients.
 
 ## Quick start
 
@@ -115,7 +115,7 @@ Enable **Multi-instance** in RoALT and launch clients from RoALT. The Mac port u
 <summary><b>Does anti-AFK guarantee I will not be kicked?</b></summary>
 <br>
 
-No. The Mac implementation sends a Space press to a visible client when you have been away, but individual Roblox games may not count synthetic input. Keep auto-rejoin as a fallback. Experimental background mode sends input without focusing or restoring minimized windows. Its ability to prevent a real Roblox idle kick is unverified.
+Idle prevention depends on whether the game accepts the click. Test it in the experience you run.
 
 </details>
 
