@@ -472,7 +472,13 @@ fn init(app: &TauriApp, data_dir: &Path, moved_from: Option<&Path>) -> std::resu
         )
     })?;
     #[cfg(target_os = "macos")]
-    request_initial_permissions(data_dir);
+    {
+        request_initial_permissions(data_dir);
+        std::thread::spawn(|| {
+            unsafe extern "C" { fn ro_cleanup_installed_duplicates(); }
+            unsafe { ro_cleanup_installed_duplicates(); }
+        });
+    }
     spawn_auto_lock(app.handle().clone());
     instances::Tracker::spawn(app.handle().clone());
     instances::afk::spawn(app.handle().clone());

@@ -16,7 +16,9 @@ fn main() {
         assert!(std::path::Path::new(runtime.trim()).is_file(), "Clang macOS runtime archive missing");
         println!("cargo:rustc-link-arg={}",runtime.trim());
         println!("cargo:rerun-if-changed=native/afk.m");
-        cc::Build::new().file("native/afk.m").file("native/windows.m").file("native/macos.m").flag("-fobjc-arc").compile("roalt_macos");
+        println!("cargo:rerun-if-changed=native/install_cleanup.m");
+        println!("cargo:rustc-link-lib=framework=Security");
+        cc::Build::new().file("native/install_cleanup.m").file("native/afk.m").file("native/windows.m").file("native/macos.m").flag("-fobjc-arc").compile("roalt_macos");
         println!("cargo:rustc-link-lib=framework=Cocoa");
         println!("cargo:rustc-link-lib=framework=LocalAuthentication");
         println!("cargo:rustc-link-lib=framework=IOKit");

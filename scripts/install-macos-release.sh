@@ -1,5 +1,5 @@
 #!/bin/bash
-# Installs the pinned Apple Silicon preview; no compiler or package manager needed.
+# Installs the latest published Apple Silicon preview; no compiler or package manager needed.
 set -euo pipefail
 
 fail() { printf 'RoALT: %s\n' "$*" >&2; exit 1; }
@@ -33,9 +33,9 @@ main() {
   [[ "$(uname -s)" == Darwin ]] || fail 'This installer requires macOS.'
   [[ "$(uname -m)" == arm64 ]] || fail 'This preview requires Apple Silicon. Run Terminal natively, not through Rosetta.'
   local tag archive base expected actual bundle identifier architecture
-  local version=0.8.1 api_digest='' parent_pid='' parent_dir
+  local version='' api_digest='' parent_pid='' parent_dir
   # Keep destination available to the EXIT trap after main returns.
-  tag=macos-preview-0.8.1-5
+  tag=""
   destination="$HOME/Applications/RoALT.app"
   if [[ "${1:-}" == --in-app ]]; then
     [[ $# == 6 ]] || fail 'Invalid update parameters.'
@@ -46,22 +46,40 @@ main() {
     [[ -d "$destination" ]] || fail 'Installed app is missing.'
   else
     if pgrep -x roalt >/dev/null; then fail 'Quit RoALT before installing an update.'; fi
-    if [[ -e /Applications/RoALT.app ]]; then
-      [[ ! -e "$destination" ]] || fail 'There are two installed copies of RoALT. Keep one in Applications or ~/Applications and retry.'
+    if [[ ! -e "$destination" && -e /Applications/RoALT.app ]]; then
       destination=/Applications/RoALT.app
     fi
   fi
   parent_dir="${destination%/*}"
   archive=RoALT-macOS-Apple-Silicon.zip
-  base="https://github.com/cookedkid/RoALT/releases/download/$tag"
   [[ ! -L "$destination" ]] || fail 'The install destination is a symlink; replace it manually.'
   work_dir="$(mktemp -d "${TMPDIR:-/tmp}/roalt-download.XXXXXX")"
   install_stage=''
   trap cleanup EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
+  if [[ -z "$tag" ]]; then
+    curl -fsSL --max-time 30 --retry 2 'https://api.github.com/repos/cookedkid/RoALT/releases?per_page=100' -o "$work_dir/releases.json" || fail 'Could not look up the latest Mac release.'
+    local index=0 candidate draft
+    while candidate=$(/usr/bin/plutil -extract "$index.tag_name" raw "$work_dir/releases.json" 2>/dev/null); do
+      draft=$(/usr/bin/plutil -extract "$index.draft" raw "$work_dir/releases.json")
+      if [[ "$draft" == false && "$candidate" =~ ^macos-preview-([0-9]+\.[0-9]+\.[0-9]+)-[0-9]+$ ]]; then
+        version="${BASH_REMATCH[1]}"; tag="$candidate"; break
+      fi
+      index=$((index + 1))
+    done
+    [[ -n "$tag" ]] || fail 'No published Mac preview found.'
+  fi
+  base="https://github.com/cookedkid/RoALT/releases/download/$tag"
+  if [[ -e "$destination" ]]; then
+    [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$destination/Contents/Info.plist")" == com.inspectsoftware.roalt ]] || fail 'Existing app has a different identifier.'
+    local installed_version
+    installed_version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$destination/Contents/Info.plist")
+    [[ "$installed_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail 'Unknown installed app version.'
+    /usr/bin/awk -v old="$installed_version" -v new="$version" 'BEGIN { split(old,a,"[.]");split(new,b,"[.]");for(i=1;i<=3;i++){if(a[i]+0>b[i]+0)exit 1;if(a[i]+0<b[i]+0)exit 0} }' || fail 'A newer copy is already installed.'
+  fi
   printf 'Downloading RoALT %s…\n' "$tag"
-  curl --connect-timeout 15 --max-time 240 --max-filesize 200000000 --fail --location --silent --show-error --proto '=https' --proto-redir '=https' --retry 2 --output "$work_dir/$archive" "$base/$archive" || fail 'The pinned Mac release could not be downloaded. Check https://github.com/cookedkid/RoALT/releases and try again.'
+  curl --connect-timeout 15 --max-time 240 --max-filesize 200000000 --fail --location --silent --show-error --proto '=https' --proto-redir '=https' --retry 2 --output "$work_dir/$archive" "$base/$archive" || fail 'The Mac release could not be downloaded. Check https://github.com/cookedkid/RoALT/releases and try again.'
   curl --connect-timeout 15 --max-time 240 --max-filesize 200000000 --fail --location --silent --show-error --proto '=https' --proto-redir '=https' --retry 2 --output "$work_dir/SHA256SUMS.txt" "$base/SHA256SUMS.txt" || fail 'Could not download the release checksum; installation stopped.'
   # Require one exact filename entry. Never execute or trust paths from a checksum file.
   expected="$(awk -v name="$archive" '$2 == name { print $1; count++ } END { if (count != 1) exit 1 }' "$work_dir/SHA256SUMS.txt")" || fail 'The release checksum entry is missing or duplicated.'

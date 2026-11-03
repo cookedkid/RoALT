@@ -1,6 +1,6 @@
 <div align="center">
 
-# RoALT for macOS — 0.8.4
+# RoALT for macOS — 0.8.5
 
 ### A native Apple Silicon port of the Roblox account manager
 
@@ -46,7 +46,7 @@ Or install the same preview with one Terminal command:
 curl -fsSL https://raw.githubusercontent.com/cookedkid/RoALT/main/scripts/install-macos-release.sh | bash
 ```
 
-This updates your existing copy in `/Applications` or `~/Applications`. A fresh install goes into `~/Applications`. If both folders have a copy, keep one before running the installer. **No Rust, Node, Xcode or Homebrew is required.** The installer checks the SHA-256, app identity, version and architecture before replacing an existing app, and restores the old copy if replacement fails. When an update changes the app signature, it clears only RoALT’s old Accessibility, Screen Recording and Input Monitoring grants after successful installation. Approve those permissions again when you open the new app; saved accounts and Keychain items are preserved. Reinstalling the identical signed build leaves grants alone. It does not launch RoALT. You can read [the installer](scripts/install-macos-release.sh) first.
+This updates your existing copy in `/Applications` or `~/Applications`. A fresh install goes into `~/Applications`. If both folders have a copy, the installer prefers ~/Applications. When opened from Applications, RoALT moves older verified RoALT bundles and identical duplicates in Downloads and the two Applications folders to Trash. Running copies and newer versions are skipped. **No Rust, Node, Xcode or Homebrew is required.** The installer checks the SHA-256, app identity, version and architecture before replacing an existing app, and restores the old copy if replacement fails. When an update changes the app signature, it clears only RoALT’s old Accessibility, Screen Recording and Input Monitoring grants after successful installation. Approve those permissions again when you open the new app; saved accounts and Keychain items are preserved. Reinstalling the identical signed build leaves grants alone. It does not launch RoALT. You can read [the installer](scripts/install-macos-release.sh) first.
 
 The preview is ad-hoc signed and not notarized. macOS may require approval to open it or access an existing RoALT Keychain item. Approve requested Accessibility, Screen Recording and Input Monitoring access yourself, then restart RoALT. Anti-AFK remains off until enabled.
 

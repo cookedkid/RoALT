@@ -57,6 +57,8 @@ jobs:
 
           This app is ad-hoc signed, not Developer ID signed or notarized. macOS may require approval to open the app and access Keychain. Grant Accessibility, Screen Recording and Input Monitoring when needed.
 
+          On launch from Applications, RoALT now moves verified older copies and identical duplicates in Downloads or Applications to Trash. The terminal installer now looks up the latest Mac preview.
+
           Max alts now applies low textures, gray sky and zero grass distance on launch. An experimental option releases unused allocator pages sooner. Max alts and Balanced preserve custom memory thresholds. Automatic window minimization waits for the client to join. This build also includes a microphone usage description for Roblox voice chat.
 
           Mac anti-AFK brings the game forward, clicks, then minimizes it. Games may handle the click differently. See MACOS_README.md for supported features and limitations. Intel Macs are not supported by this build.
