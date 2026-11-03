@@ -89,6 +89,8 @@ export const isRtl = () => lang === "ar";
 
 // Platform-specific security copy must describe the actual credential provider.
 const macCopy: Partial<Record<Key, string>> = {
+ "performance.graphicsHint": "Applies when RoALT launches an alt. RoALT restores the original graphics file after startup.",
+ "performance.hintLight": "Use the graphics overrides below for new clients. Full quality accounts keep their own graphics.",
  "settings.antiAfkBackgroundHint": "Experimental: send the selected key directly to tracked Roblox processes without changing focus, including minimized clients. Skips recent human activity. Posting does not confirm game acceptance or prevent idle kicks reliably.",
  "settings.antiAfkHint": "Opt-in: bring tracked clients forward, click, and minimize them while you are idle. Requires Accessibility and Input Monitoring in System Settings → Privacy & Security; restart RoALT after granting permissions.",
  "settings.antiAfkFocusHint": "After 5 seconds without keyboard or mouse activity, bring each due client forward, click the center of its window, then minimize it one second later. Manual input interrupts the round. Game acceptance is not guaranteed.",

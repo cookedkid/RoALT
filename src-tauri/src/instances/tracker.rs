@@ -484,14 +484,14 @@ impl Tracker {
         let waiting: Vec<(String, u32)> = self
             .entries()
             .iter()
-            .filter(|e| !e.window_seen && e.inst.state != InstanceState::Exited)
+            .filter(|e| !e.window_seen && e.inst.state == InstanceState::InGame)
             .filter_map(|e| client_of(e).map(|(pid, _)| (e.inst.id.clone(), pid)))
             .collect();
         let seen: Vec<(String, u32)> = waiting.into_iter().filter(|&(_, pid)| has_window(pid)).collect();
         let mut entries = self.entries();
         seen.into_iter()
             .filter(|(id, pid)| {
-                let Some(e) = entries.iter_mut().find(|e| e.inst.id == *id && e.inst.pid == *pid && !e.window_seen) else { return false };
+                let Some(e) = entries.iter_mut().find(|e| e.inst.id == *id && e.inst.pid == *pid && e.inst.state == InstanceState::InGame && !e.window_seen) else { return false };
                 e.window_seen = true;
                 true
             })
@@ -1385,6 +1385,8 @@ mod tests {
         let t = Tracker::new();
         let a = t.register(&LaunchInfo { pid_start: Some(50), ..info(900, now_ms(), false) }, target()).id;
         let b = t.register(&LaunchInfo { pid_start: Some(60), ..info(901, now_ms(), true) }, target()).id;
+        assert!(t.first_windows(&|_| true).is_empty(), "leave loading windows visible");
+        for e in t.entries().iter_mut() { e.inst.state = InstanceState::InGame; }
         assert_eq!(t.first_windows(&|_| false), Vec::<u32>::new(), "no window yet");
         assert_eq!(t.first_windows(&|_| true), [900], "a bootstrapper isn't the client");
         assert_eq!(t.first_windows(&|_| true), Vec::<u32>::new(), "once");

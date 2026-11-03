@@ -22,7 +22,7 @@ Native Apple Silicon Tauri/WKWebView build retaining the real account manager, R
 
 ## Not implemented
 
-Kernel-enforced CPU quotas, core affinity/spreading, arbitrary memory trimming or memory allocation caps, per-process GPU/VRAM counters, bandwidth shaping, scheduled shutdown, network classification and automatic Roblox player installation and updates. Unsupported controls are hidden in the Mac performance/instance UI and rejected by the backend. Windows rendering flags are not written into the signed Mac app. Disabling public networks blocks launches because macOS does not expose Windows' network categories.
+Kernel-enforced CPU quotas, core affinity/spreading, arbitrary memory trimming or memory allocation caps, per-process GPU/VRAM counters, bandwidth shaping, scheduled shutdown, network classification and automatic Roblox player installation and updates. Unsupported controls are hidden in the Mac performance/instance UI and rejected by the backend. Max alts temporarily merges the allowlisted graphics flags into Roblox.app/Contents/MacOS/ClientSettings/ClientAppSettings.json during launch. RoALT restores the original after startup and recovers interrupted changes on restart. Full quality accounts skip these overrides. Disabling public networks blocks launches because macOS does not expose Windows' network categories.
 
 ## Validation and remaining acceptance check
 

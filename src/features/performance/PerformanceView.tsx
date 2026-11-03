@@ -137,9 +137,9 @@ function RenderFlagRows({ settings }: { settings: Settings }) {
           options={[["default", auto], ["lowest", t("performance.texLowest")], ["low", t("performance.texLow")], ["medium", t("performance.texMedium")], ["high", t("performance.texHigh")]]}
         />
       </Row>
-      <Row title={t("performance.renderMode")} hint={t("performance.hintRenderMode")}>
+      {!IS_MAC && <Row title={t("performance.renderMode")} hint={t("performance.hintRenderMode")}>
         <Choice label={t("performance.renderMode")} hint={t("performance.hintRenderMode")} value={r.mode} onChange={(mode) => put({ mode })} options={[["default", auto], ["d3d11", MODE_NAMES.d3d11], ["vulkan", MODE_NAMES.vulkan], ["opengl", MODE_NAMES.opengl]]} />
-      </Row>
+      </Row>}
       <h3 className="font-semibold pt-4">{t("performance.stripTitle")}</h3>
       <SwitchRow title={t("performance.graySky")} hint={t("performance.hintGraySky")} more={t("performance.hintGraySky")} checked={r.graySky} onChange={(graySky) => put({ graySky })} />
       <SwitchRow title={t("performance.noGrass")} hint={t("performance.hintNoGrass")} more={t("performance.hintNoGrass")} checked={r.noGrass} onChange={(noGrass) => put({ noGrass })} />
@@ -191,8 +191,8 @@ export function PerformanceView({ settings }: { settings: Settings }) {
           </div>
           <FpsRow settings={settings} />
           <SwitchRow title={t("settings.lowGraphics")} hint={t("performance.hintLow")} more={t("settings.lowGraphicsHint")} checked={settings.lowGraphics} onChange={(lowGraphics) => set.mutate({ lowGraphics })} />
-          {!IS_MAC && <SwitchRow title={t("settings.lighterRendering")} hint={t("performance.hintLight")} more={t("performance.hintLight")} checked={settings.lighterRendering} onChange={(lighterRendering) => set.mutate({ lighterRendering })} />}
-          {!IS_MAC && settings.lighterRendering && <RenderFlagRows settings={settings} />}
+          <SwitchRow title={t("settings.lighterRendering")} hint={t("performance.hintLight")} more={t("performance.hintLight")} checked={settings.lighterRendering} onChange={(lighterRendering) => set.mutate({ lighterRendering })} />
+          {settings.lighterRendering && <RenderFlagRows settings={settings} />}
           <h3 id="perf-cpu" className="font-semibold pt-5 pb-2">{t("performance.section.cpuMemory")}</h3>
           <TuneRow title={t("settings.adaptive")} hint={t("settings.adaptiveHint")}>
             <Switch label={t("settings.adaptive")} checked={settings.adaptive.enabled} onChange={(enabled) => set.mutate({ adaptive: { ...settings.adaptive, background, enabled } })} />
@@ -298,7 +298,7 @@ const WINDOWS_PRESETS: readonly { label: Key; tag: Key; facts: () => string[]; p
       t("performance.factMainAccount"), t("performance.factBootstrapper"), t("performance.factAfk"), t("performance.factNextLaunch"),
     ],
     profile: {
-      fpsCap: 10, lowGraphics: true, lighterRendering: true, renderFlags: { ...lightest, graySky: true, pauseVoxelizer: true }, minimizeOnLaunch: true, tinyOnLaunch: true, microWidth: 240, microHeight: 180, memRestartMb: 0, memThrottle: noThrottle, trimEveryMin: 15, autoSpread: true, fairCap: true,
+      fpsCap: 10, lowGraphics: true, lighterRendering: true, renderFlags: { ...lightest, graySky: true, pauseVoxelizer: true }, minimizeOnLaunch: true, tinyOnLaunch: true, microWidth: 240, microHeight: 180, trimEveryMin: 15, autoSpread: true, fairCap: true,
       adaptive: { enabled: true, background: { cpuCap: 25, eco: true, trimEveryMin: null, affinity: null } }, previewFps: 5,
     },
   },
@@ -307,7 +307,7 @@ const WINDOWS_PRESETS: readonly { label: Key; tag: Key; facts: () => string[]; p
     tag: "performance.tagBalanced",
     facts: () => [t("dashboard.fps", { fps: 30 }), t("settings.lowGraphics"), t("performance.factOnScreen"), t("performance.factBg", { n: 50 })],
     profile: {
-      fpsCap: 30, lowGraphics: true, lighterRendering: true, renderFlags: lightest, minimizeOnLaunch: false, ...normalWindows, memRestartMb: 0, memThrottle: noThrottle, trimEveryMin: 30, autoSpread: true,
+      fpsCap: 30, lowGraphics: true, lighterRendering: true, renderFlags: lightest, minimizeOnLaunch: false, ...normalWindows, trimEveryMin: 30, autoSpread: true,
       adaptive: { enabled: true, background: { cpuCap: 50, eco: true, trimEveryMin: null, affinity: null } }, previewFps: 15,
     },
   },
@@ -324,8 +324,8 @@ const WINDOWS_PRESETS: readonly { label: Key; tag: Key; facts: () => string[]; p
 
 const PRESETS = IS_MAC ? WINDOWS_PRESETS.map((preset) => ({
   ...preset,
-  facts: () => [preset.profile.fpsCap ? `${preset.profile.fpsCap} FPS` : "Roblox FPS setting", preset.profile.lowGraphics ? "Low graphics" : "Your graphics settings", preset.profile.adaptive?.enabled ? (preset.profile.fairCap ? "Shared cooperative CPU budget + background priority" : "Cooperative CPU cap + background priority") : "Normal scheduling priority"],
-  profile: { ...preset.profile, previewFps: 5 as const, lighterRendering: false, trimEveryMin: 0, autoSpread: false,
+  facts: () => [...(preset.label === "performance.preset.maxAlts" ? ["Gray sky · lowest textures · no grass · MSAA ×1"] : []), preset.profile.fpsCap ? `${preset.profile.fpsCap} FPS` : "Roblox FPS setting", preset.profile.lowGraphics ? "Low graphics" : "Your graphics settings", preset.profile.adaptive?.enabled ? (preset.profile.fairCap ? "Shared cooperative CPU budget + background priority" : "Cooperative CPU cap + background priority") : "Normal scheduling priority"],
+  profile: { ...preset.profile, previewFps: 5 as const, lighterRendering: preset.label === "performance.preset.maxAlts", trimEveryMin: 0, autoSpread: false,
     adaptive: { enabled: preset.profile.adaptive?.enabled ?? false, background: { cpuCap: preset.profile.adaptive?.background.cpuCap ?? null, eco: true, trimEveryMin: null, affinity: null } } },
 })) : WINDOWS_PRESETS;
 

@@ -2316,8 +2316,11 @@ pub fn performance_parse(s: State<'_, App>, text: String) -> Result<crate::perfo
 pub(crate) fn apply_performance(v: &mut Settings, patch: &SettingsPatch) -> Result<()> {
     #[cfg(target_os = "macos")]
     {
-        if patch.trim_every_min.is_some_and(|n| n > 0) || patch.auto_spread == Some(true) || patch.lighter_rendering == Some(true) {
-            return Err(AppError::Invalid("Memory trimming, core affinity and Windows rendering flags are unavailable on macOS.".into()));
+        if patch.trim_every_min.is_some_and(|n| n > 0) || patch.auto_spread == Some(true) {
+            return Err(AppError::Invalid("Memory trimming and core affinity are unavailable on macOS.".into()));
+        }
+        if patch.render_flags.is_some_and(|r| r.mode != crate::model::RenderMode::Default) {
+            return Err(AppError::Invalid("Choose the default rendering mode for Mac profiles.".into()));
         }
         if let Some(a) = patch.adaptive { crate::instances::limits::validate(a.background)?; }
     }
@@ -2671,7 +2674,6 @@ mod mac_preview_tests {
         for patch in [
             SettingsPatch { trim_every_min: Some(1), ..Default::default() },
             SettingsPatch { auto_spread: Some(true), ..Default::default() },
-            SettingsPatch { lighter_rendering: Some(true), ..Default::default() },
         ] {
             let mut settings = Settings::default();
             let original = settings.clone();

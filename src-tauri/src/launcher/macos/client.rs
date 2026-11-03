@@ -35,7 +35,7 @@ fn cookie_sandbox(home:&std::path::Path)->Result<String> {
 (deny file-read-data file-write* (subpath "{escaped}/Library/HTTPStorages"))
 "#))
 }
-pub fn start(exe:&ClientExe,uri:&Secret,extra:&[String],multi:bool,protect:bool)->Result<(u32,u64)> {
+pub fn start(exe:&ClientExe,uri:&Secret,extra:&[String],multi:bool,protect:bool,release_unused_memory:bool)->Result<(u32,u64)> {
  if !multi && !crate::instances::process::roblox_processes().is_empty(){return Err(AppError::Invalid("Enable multi-instance to launch another Roblox client.".into()))}
  if multi {
   // Unlink only the named singleton. Existing clients keep their open semaphore and continue.
@@ -47,6 +47,9 @@ pub fn start(exe:&ClientExe,uri:&Secret,extra:&[String],multi:bool,protect:bool)
   let mut c=std::process::Command::new("/usr/bin/sandbox-exec");
   c.arg("-p").arg(cookie_sandbox(&home)?).arg(&exe.path);c
  }else{std::process::Command::new(&exe.path)};
+ if release_unused_memory {
+     command.env("MIMALLOC_PURGE_DELAY", "0");
+ }
  // Roblox logs the complete protocol argument to stdout. Never inherit those streams.
  let mut child=command.arg("-protocolString").arg(uri.expose()).args(extra).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn()?;
  let pid=child.id();

@@ -168,7 +168,18 @@ pub async fn launch(s: &App, account_id: i64, target: &LaunchTarget, fps_cap: Op
     // Before any cookie call: no ticket is fetched when Roblox isn't installed or the arguments
     // are refused.
     let (exe, production) = update::launch_client(s).await?;
+    #[cfg(target_os = "macos")]
+    if !flags::restore_before_launch(&exe.path) {
+        return Err(AppError::Invalid("Could not restore the previous Roblox graphics settings. Check write access to Roblox.app and retry.".into()));
+    }
     let args = args_for(s, account_id)?;
+    #[cfg(target_os = "macos")]
+    let release_unused_memory = crate::mac_options::read(&crate::mac_options::options_dir(s))
+        .map(|options| options.release_unused_memory)
+        .unwrap_or_else(|err| {
+            log::warn!("Using Roblox's default memory settings: {err}");
+            false
+        });
     let (join, warning) = resolve(&s.api, account_id, &cookie, target).await?;
     let assertion = s
         .api
@@ -183,7 +194,7 @@ pub async fn launch(s: &App, account_id: i64, target: &LaunchTarget, fps_cap: Op
     let account = s.db.account(account_id)?;
     let fps = fps_cap.or(account.fps_cap).unwrap_or(settings.fps_cap);
     let undo = client_settings::apply(&s.db, fps, settings.low_graphics && !account.full_quality);
-    let flags = match (cfg!(windows) && settings.lighter_rendering && !account.full_quality, exe.bootstrapper) {
+    let flags = match (settings.lighter_rendering && !account.full_quality, exe.bootstrapper) {
         (false, _) => None,
         (true, true) => {
             log::info!("lighter rendering skipped for account {account_id}: a bootstrapper manages Roblox's flags");
@@ -191,6 +202,11 @@ pub async fn launch(s: &App, account_id: i64, target: &LaunchTarget, fps_cap: Op
         }
         (true, false) => flags::apply(&exe.path, &settings.render_flags),
     };
+    #[cfg(target_os = "macos")]
+    if settings.lighter_rendering && !account.full_quality && flags.is_none() {
+        if let Some(undo) = undo { undo.put_back(); }
+        return Err(AppError::Invalid("Could not apply the graphics profile. Check that Roblox.app is writable and its ClientSettings file contains valid JSON, or turn off Lighter rendering.".into()));
+    }
     let waiting = undo.is_some() || flags.is_some();
     let put_back = move |undo: Option<client_settings::Undo>| {
         if let Some(undo) = undo {
@@ -204,7 +220,7 @@ pub async fn launch(s: &App, account_id: i64, target: &LaunchTarget, fps_cap: Op
     #[cfg(windows)]
     let started = client::start(&exe, &uri::player_uri(&ticket, started_at, &place, production), &args);
     #[cfg(target_os = "macos")]
-    let started = client::start(&exe, &uri::player_uri(&ticket, started_at, &place, production), &args, settings.multi_instance, settings.protect_shared_login);
+    let started = client::start(&exe, &uri::player_uri(&ticket, started_at, &place, production), &args, settings.multi_instance, settings.protect_shared_login, release_unused_memory && !account.full_quality);
     match &started {
         Ok((pid, pid_start)) if waiting => {
             // A bootstrapper's own process exits by design: only the log tells then.

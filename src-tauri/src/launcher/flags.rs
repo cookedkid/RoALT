@@ -90,12 +90,16 @@ fn write(file: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let tmp = file.with_extension("json.roalt");
     let readonly = std::fs::metadata(file).is_ok_and(|m| m.permissions().readonly());
     let done = retry(|| std::fs::write(&tmp, bytes)).and_then(|()| {
-        if readonly {
+        #[cfg(target_os = "macos")]
+        if let Ok(original) = std::fs::metadata(file) {
+            std::fs::set_permissions(&tmp, original.permissions())?;
+        }
+        if cfg!(windows) && readonly {
             set_readonly(file, false)?;
         }
         retry(|| std::fs::rename(&tmp, file))
     });
-    if readonly && let Err(e) = set_readonly(file, true) {
+    if cfg!(windows) && readonly && let Err(e) = set_readonly(file, true) {
         log::warn!("lighter rendering: couldn't make {} read-only again: {e}", file.display());
     }
     if done.is_err() {
@@ -111,13 +115,23 @@ const SAVED: &str = "ClientAppSettings.json.roalt-before";
 /// when it is still there.
 fn put_back_at(file: &Path) -> bool {
     let saved = file.with_file_name(SAVED);
-    let Ok(kept) = std::fs::read(&saved) else { return true };
+    let kept = match std::fs::read(&saved) {
+        Ok(kept) => kept,
+        Err(e) => return e.kind() == ErrorKind::NotFound,
+    };
     let done = match kept.split_first() {
         Some((b'1', bytes)) => write(file, bytes),
-        _ => retry(|| std::fs::remove_file(file)).or_else(|e| if e.kind() == ErrorKind::NotFound { Ok(()) } else { Err(e) }),
+        Some((b'0' | b'2', [])) => retry(|| std::fs::remove_file(file)).or_else(|e| if e.kind() == ErrorKind::NotFound { Ok(()) } else { Err(e) }),
+        _ => return false, // Preserve an incomplete backup for recovery.
     };
     match done.and_then(|()| retry(|| std::fs::remove_file(&saved))) {
-        Ok(()) => true,
+        Ok(()) => {
+            if kept == b"2" {
+                // Remove only the empty directory that this launch created.
+                if let Some(dir) = file.parent() { let _ = std::fs::remove_dir(dir); }
+            }
+            true
+        },
         Err(e) => {
             log::warn!("lighter rendering: couldn't put {} back: {e}", file.display());
             false
@@ -140,6 +154,11 @@ impl Undo {
 /// Puts back what a launch cut short by a quit or crash left behind (at start, and at exit while a
 /// launch may still be waiting for its client), in every build: a launch can use another than
 /// `client::find`'s.
+#[cfg(target_os = "macos")]
+pub fn restore_before_launch(exe: &Path) -> bool {
+    exe.parent().is_some_and(|dir| put_back_at(&dir.join("ClientSettings/ClientAppSettings.json")))
+}
+
 pub fn restore() {
     for dir in super::client::versions_dirs() {
         for build in std::fs::read_dir(dir).into_iter().flatten().flatten() {
@@ -179,6 +198,7 @@ pub fn apply(exe: &Path, render: &RenderFlags) -> Option<Undo> {
     let saved = file.with_file_name(SAVED);
     let kept = match &before {
         Some(bytes) => [b"1", bytes.as_slice()].concat(),
+        None if !file.parent()?.exists() => b"2".to_vec(),
         None => b"0".to_vec(),
     };
     let written = file
@@ -243,7 +263,6 @@ mod tests {
         assert_eq!((v.get(MODES[0]), v[MODES[2]].as_str()), (None, Some("True")));
     }
 
-    #[cfg(windows)]
     #[test]
     fn puts_the_file_back_exactly() {
         let dir = std::env::temp_dir().join(format!("roalt-test-flags-{}", std::process::id()));
@@ -257,7 +276,8 @@ mod tests {
         let undo = apply(&exe, &r).expect("written");
         assert!(std::fs::read_to_string(&file).unwrap().contains("DFIntDebugFRMQualityLevelOverride"));
         undo.put_back();
-        assert!(!file.exists());
+        assert!(!file.parent().unwrap().exists());
+        std::fs::create_dir(file.parent().unwrap()).unwrap();
 
         // The user's own file: the very same bytes come back.
         let own = b"{\r\n  \"FFlagDebugSkyGray\": \"True\"\r\n}";
@@ -276,9 +296,10 @@ mod tests {
 
         // Can't be put back (held open): the original isn't lost, and nothing is written over it.
         let _left_behind = apply(&exe, &r).expect("written");
-        let flagged = std::fs::read(&file).unwrap();
-        let kept = std::fs::read(file.with_file_name(SAVED)).unwrap();
+        #[cfg(windows)]
         {
+            let flagged = std::fs::read(&file).unwrap();
+            let kept = std::fs::read(file.with_file_name(SAVED)).unwrap();
             use std::os::windows::fs::OpenOptionsExt;
             let _held = std::fs::OpenOptions::new().read(true).share_mode(1).open(&file).unwrap();
             assert!(apply(&exe, &r).is_none());

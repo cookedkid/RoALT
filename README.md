@@ -1,6 +1,6 @@
 <div align="center">
 
-# RoALT for macOS — 0.8.3
+# RoALT for macOS — 0.8.4
 
 ### A native Apple Silicon port of the Roblox account manager
 

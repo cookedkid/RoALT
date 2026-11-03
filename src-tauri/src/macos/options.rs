@@ -17,6 +17,7 @@ pub struct Options {
     pub key_code: u16,
     pub focus_fallback: bool,
     pub disable_app_nap: bool,
+    pub release_unused_memory: bool,
 }
 impl Default for Options {
     fn default() -> Self {
@@ -24,6 +25,7 @@ impl Default for Options {
             key_code: 48,
             focus_fallback: false,
             disable_app_nap: false,
+            release_unused_memory: false,
         }
     }
 }
@@ -221,7 +223,7 @@ mod tests {
     fn safe_defaults_and_key_validation() {
         let defaults: Options = serde_json::from_str("{}").unwrap();
         assert_eq!(defaults, Options::default());
-        assert!(!defaults.disable_app_nap && !defaults.focus_fallback);
+        assert!(!defaults.disable_app_nap && !defaults.focus_fallback && !defaults.release_unused_memory);
         assert!(
             Options {
                 key_code: 49,
