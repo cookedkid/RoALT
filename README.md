@@ -1,6 +1,6 @@
 <div align="center">
 
-# RoALT for macOS — 0.8.5
+# RoALT for macOS — 0.8.6
 
 ### A native Apple Silicon port of the Roblox account manager
 
@@ -64,6 +64,8 @@ curl -fsSL https://raw.githubusercontent.com/cookedkid/RoALT/main/scripts/instal
 The source installer builds the current `main` branch, verifies the app and installs into `~/Applications`. It checks prerequisites and does not silently install developer tools. See [build details](docs/MACOS_PORT.md#build-and-install).
 
 </details>
+
+On first launch with no microphone decision on record, macOS asks whether to allow microphone access for Roblox voice chat. You can decline and still launch accounts. To change your choice later, open System Settings → Privacy & Security → Microphone.
 
 ### New Mac controls
 

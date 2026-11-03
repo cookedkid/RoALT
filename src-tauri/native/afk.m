@@ -1,4 +1,5 @@
 #import <Cocoa/Cocoa.h>
+#import <AVFoundation/AVFoundation.h>
 #import <ApplicationServices/ApplicationServices.h>
 #include <libproc.h>
 #include <stdatomic.h>
@@ -16,6 +17,20 @@ void ro_request_accessibility(void) {
         });
     });
 }
+void ro_request_microphone_if_needed(void) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        // A bare development executable has no purpose string. TCC aborts such requests.
+        NSString *purpose = [NSBundle.mainBundle objectForInfoDictionaryKey:@"NSMicrophoneUsageDescription"];
+        if (![purpose isKindOfClass:NSString.class] || purpose.length == 0) return;
+        if ([AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio] == AVAuthorizationStatusNotDetermined) {
+            [AVCaptureDevice requestAccessForMediaType:AVMediaTypeAudio completionHandler:^(BOOL granted) {
+                // Voice chat is optional. Launching Roblox needs no permission result.
+                (void)granted;
+            }];
+        }
+    });
+}
+
 void ro_request_initial_permissions(void) {
     @autoreleasepool {
         if (!CGPreflightScreenCaptureAccess()) CGRequestScreenCaptureAccess();

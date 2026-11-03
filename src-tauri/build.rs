@@ -19,6 +19,7 @@ fn main() {
         println!("cargo:rerun-if-changed=native/install_cleanup.m");
         println!("cargo:rustc-link-lib=framework=Security");
         cc::Build::new().file("native/install_cleanup.m").file("native/afk.m").file("native/windows.m").file("native/macos.m").flag("-fobjc-arc").compile("roalt_macos");
+        println!("cargo:rustc-link-lib=framework=AVFoundation");
         println!("cargo:rustc-link-lib=framework=Cocoa");
         println!("cargo:rustc-link-lib=framework=LocalAuthentication");
         println!("cargo:rustc-link-lib=framework=IOKit");
