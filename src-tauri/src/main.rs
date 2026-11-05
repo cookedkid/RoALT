@@ -6,6 +6,9 @@ mod commands;
 #[cfg(target_os = "macos")]
 #[path = "macos/options.rs"]
 mod mac_options;
+#[cfg(target_os = "macos")]
+#[path = "macos/crash_reports.rs"]
+mod crash_reports;
 mod diagnostics;
 mod discord;
 mod error;

@@ -24,6 +24,13 @@ pub fn redact(line: &str) -> Option<String> {
         return None;
     }
     let mut out = mask_user_folder(line);
+    let mut cursor = 0;
+    while let Some(offset) = out[cursor..].find("/Users/") {
+        let start = cursor + offset + 7;
+        let end = start + out[start..].find(['/', '\"', '\'', '\n', ',']).unwrap_or(out.len() - start);
+        out.replace_range(start..end, "…");
+        cursor = start + '…'.len_utf8();
+    }
     out = mask_after(&out, "userid:");
     out = mask_after(&out, "sid:");
     Some(mask_uuids(&mask_ipv4(&mask_queries(&out))))
@@ -236,5 +243,13 @@ mod tests {
         assert!(out.len() <= 2000, "{}", out.len());
         assert!(out.starts_with("head\n") && out.contains("line 999") && !out.contains("line 0\n"));
         assert!(compose("h", &[], 10).starts_with('h'));
+    }
+}
+
+#[cfg(test)]
+mod mac_path_tests {
+    #[test]
+    fn masks_multiple_mac_user_paths() {
+        assert_eq!(super::redact("/Users/alice/Logs/a and /Users/bob/Logs/b").unwrap(), "/Users/…/Logs/a and /Users/…/Logs/b");
     }
 }

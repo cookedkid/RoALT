@@ -29,6 +29,10 @@ jobs:
         run: test "$(uname -m)" = arm64
       - run: npm ci
       - run: npm run build
+      - name: Check native anti-AFK events without posting input
+        run: |
+          clang -fobjc-arc src-tauri/native/tests/afk_test.m -framework Cocoa -framework ApplicationServices -framework AVFoundation -o /tmp/roalt-afk-test
+          /tmp/roalt-afk-test
       - run: cargo test --manifest-path src-tauri/Cargo.toml --locked
       - run: npm run tauri -- build --bundles app
       - name: Package and verify
@@ -57,13 +61,16 @@ jobs:
 
           This app is ad-hoc signed, not Developer ID signed or notarized. macOS may require approval to open the app and access Keychain. Grant Accessibility, Screen Recording and Input Monitoring when needed.
 
-          RoALT now asks for microphone permission for Roblox voice chat when macOS has no decision on record. Choosing Don’t Allow still lets you launch accounts.
+          Changes in 0.9.0:
+          - Anti-AFK now brings each due client forward and presses F13 at the selected 1–19 minute interval. It restores the previous focus and re-minimizes previously minimized clients. The center click is removed. Manual input interrupts the round. This follows Windows v0.9.2, but Mac idle-kick prevention still needs a live endurance test.
+          - Clearer crash explanations from matching macOS crash reports: privacy metadata errors, code-signature failures, explicit memory-resource terminations, invalid memory access, and aborts. Unknown causes stay unconfirmed. Delayed reports update the existing crash entry without blocking tracking or auto-restart.
+          - Setting a manual CPU cap no longer drops unrelated automatic background limits. Foreground, loading, and Full quality exemptions remain.
+          - Fixed the blocked Mac releases-page link, GitHub update-check errors, and wrapping of update controls and messages.
+          - Diagnostic exports now mask Mac home-directory usernames.
 
-          On launch from Applications, RoALT now moves verified older copies and identical duplicates in Downloads or Applications to Trash. The terminal installer now looks up the latest Mac preview.
+          Validated with automated Mac tests and a packaged Apple Silicon build. Crash explanations require an accessible matching modern .ips report; they are not a guarantee that every crash cause can be identified. No memory-trimming savings are claimed.
 
-          Max alts now applies low textures, gray sky and zero grass distance on launch. An experimental option releases unused allocator pages sooner. Max alts and Balanced preserve custom memory thresholds. Automatic window minimization waits for the client to join. This build also includes a microphone usage description for Roblox voice chat.
-
-          Mac anti-AFK brings the game forward, clicks, then minimizes it. Games may handle the click differently. See MACOS_README.md for supported features and limitations. Intel Macs are not supported by this build.
+          See MACOS_README.md for supported features and limitations. Intel Macs are not supported by this build.
           NOTES
           if gh release view "$tag" >/dev/null 2>&1; then
             echo "Release $tag already exists; leaving its assets unchanged."

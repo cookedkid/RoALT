@@ -25,6 +25,9 @@
           "url": "https://github.com/inspectsoftware/*"
         },
         {
+          "url": "https://github.com/cookedkid/RoALT/releases"
+        },
+        {
           "url": "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
         },
         {

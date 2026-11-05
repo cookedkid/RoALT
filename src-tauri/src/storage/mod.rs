@@ -647,6 +647,15 @@ impl Db {
         Ok(())
     }
 
+    /// Enrich an existing crash after macOS finishes writing its report; never add a duplicate.
+    #[cfg(target_os = "macos")]
+    pub fn explain_crash(&self, instance_id: &str, reason: &str) -> Result<bool> {
+        Ok(self.conn().execute(
+            "UPDATE crashes SET reason = ?2 WHERE instance_id = ?1 AND kind = 'crash'",
+            params![instance_id, reason],
+        )? > 0)
+    }
+
     /// Newest first.
     pub fn crashes(&self) -> Result<Vec<Crash>> {
         let c = self.conn();
@@ -1317,6 +1326,24 @@ mod tests {
         db.update_account(id, &patch(|p| p.full_quality = Some(true))).unwrap();
         assert!(db.account(id).unwrap().full_quality);
         assert_eq!(db.full_quality_accounts().unwrap(), [id]);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn crash_explanation_updates_only_the_matching_crash() {
+        let db = Db::open_in_memory().unwrap();
+        let account = add(&db, 1);
+        for (id, kind) in [("target", CrashKind::Crash), ("other", CrashKind::Crash), ("disconnect", CrashKind::Disconnect)] {
+            db.add_crash(&NewCrash { instance_id: id, account_id: account, kind, at: 1,
+                uptime_ms: 100, reason: None, place_id: None, log_path: None }).unwrap();
+        }
+        assert!(db.explain_crash("target", "Confirmed privacy error").unwrap());
+        assert!(!db.explain_crash("disconnect", "Wrong explanation").unwrap());
+        assert!(!db.explain_crash("missing", "Wrong explanation").unwrap());
+        let rows = db.crashes().unwrap();
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows.iter().find(|r| r.instance_id == "target").unwrap().reason.as_deref(), Some("Confirmed privacy error"));
+        assert!(rows.iter().filter(|r| r.instance_id != "target").all(|r| r.reason.is_none()));
     }
 
     #[test]

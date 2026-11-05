@@ -215,7 +215,13 @@ pub fn plan(clients: &[(String, u32, u64, Limits)], v: &Settings, foreground: Op
 /// Explicit manual limits survive exemptions; automatic limits never interrupt loading/play.
 pub fn effective(manual: Limits, free: bool, v: &Settings, fair: Option<u8>) -> Limits {
     if free { return manual; }
-    let mut l = if manual == Limits::default() && v.adaptive.enabled { v.adaptive.background } else { manual };
+    let mut l = manual;
+    if v.adaptive.enabled {
+        // A manual setting overrides only its own field. `eco` is opt-in (false means
+        // inherit); Full quality remains the way to opt out of all automatic limits.
+        l.cpu_cap = manual.cpu_cap.or(v.adaptive.background.cpu_cap);
+        l.eco |= v.adaptive.background.eco;
+    }
     if let Some(cap) = fair.filter(|_| manual.cpu_cap.is_none()) {
         l.cpu_cap = Some(throttle_cap(l.cpu_cap, cap));
     }
@@ -259,8 +265,31 @@ mod planning_tests {
         let mut v=Settings::default();v.adaptive.enabled=true;v.adaptive.background=Limits { eco:true, ..Default::default() };
         let own=Limits { cpu_cap:Some(30), ..Default::default() };
         assert_eq!(effective(own,true,&v,Some(5)),own);
-        assert_eq!(effective(own,false,&v,Some(5)),own);
+        assert_eq!(effective(own,false,&v,Some(5)),Limits { eco:true, ..own });
         assert_eq!(effective(Limits::default(),false,&v,None),v.adaptive.background);
         assert_eq!(effective(Limits::default(),false,&v,Some(5)).cpu_cap,Some(5));
+    }
+}
+
+#[cfg(test)]
+mod override_tests {
+    use super::*;
+    #[test]
+    fn manual_fields_do_not_cancel_unrelated_adaptive_settings() {
+        let mut v = Settings::default();
+        v.adaptive.enabled = true;
+        v.adaptive.background = Limits { cpu_cap: Some(20), eco: true, ..Default::default() };
+        let cpu = Limits { cpu_cap: Some(40), ..Default::default() };
+        assert_eq!(effective(cpu, false, &v, Some(5)), Limits { eco: true, ..cpu });
+        let priority = Limits { eco: true, ..Default::default() };
+        assert_eq!(effective(priority, false, &v, None).cpu_cap, Some(20));
+        assert_eq!(effective(priority, false, &v, Some(10)).cpu_cap, Some(10));
+        // 100% is an explicit manual choice; it must not fall back to an automatic cap.
+        let unlimited = Limits { cpu_cap: Some(100), ..Default::default() };
+        assert_eq!(effective(unlimited, false, &v, Some(5)).cpu_cap, Some(100));
+        assert_eq!(effective(cpu, true, &v, Some(5)), cpu);
+        v.adaptive.enabled = false;
+        assert_eq!(effective(cpu, false, &v, None), cpu);
+        assert_eq!(effective(priority, false, &v, None), priority);
     }
 }

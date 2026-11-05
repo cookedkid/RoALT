@@ -309,7 +309,7 @@ export function SettingsView({ vault, settings, onPerformance, onRecoveryCode }:
 
         <Section id="about" title={t("settings.section.about")}>
         <SelfUpdateRow on={settings.selfUpdate} onChange={(selfUpdate) => set.mutate({ selfUpdate })} />
-        <Row title={<>RoALT <span className="mono">{import.meta.env.APP_VERSION}</span></>} hint={t("settings.aboutHint")} last>
+        <Row title={<>RoALT <span className="mono">{import.meta.env.APP_VERSION}</span></>} hint={IS_MAC ? "Download Mac previews from GitHub Releases." : t("settings.aboutHint")} last>
           <button className="btn" onClick={() => openUrl(RELEASES).catch(toastError)}>
             {t("settings.openReleases")}
             <Icon name="external" size={12} />
@@ -901,15 +901,17 @@ function SelfUpdateRow({ on, onChange }: { on: boolean; onChange: (on: boolean) 
   return (
     <Row
       title={t("settings.selfUpdate")}
-      hint={IS_MAC ? "Check this Mac fork at startup and every six hours, or check now. Choose Update to download, verify, and reopen the app. macOS may ask for permissions again." : t("settings.selfUpdateHint")}
+      hint={IS_MAC ? "Check GitHub at startup and every six hours. Choose Update to install a new version." : t("settings.selfUpdateHint")}
     >
-      <span className="flex flex-wrap items-center gap-3">
-        {result && <span className="text-xs text-dim" role="status">{result}</span>}
-        <button className="btn btn-sm" disabled={busy} onClick={() => void check()}>
-          {busy ? t("settings.checking") : t("settings.checkNow")}
-        </button>
-        <Switch label={t("settings.selfUpdate")} checked={on} onChange={onChange} />
-      </span>
+      <div className="flex max-w-full min-w-0 flex-col items-start gap-2">
+        <div className="flex flex-wrap items-center gap-3">
+          <button className="btn btn-sm" disabled={busy} onClick={() => void check()}>
+            {busy ? t("settings.checking") : t("settings.checkNow")}
+          </button>
+          <Switch label={t("settings.selfUpdate")} checked={on} onChange={onChange} />
+        </div>
+        <span className="text-xs text-dim empty:hidden [overflow-wrap:anywhere]" role="status">{result}</span>
+      </div>
     </Row>
   );
 }

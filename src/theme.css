@@ -1197,7 +1197,8 @@
     display: flex;
     align-items: flex-start;
     gap: 10px;
-    width: 340px;
+    width: min(340px, calc(100vw - 2rem));
+    overflow-wrap: anywhere;
     padding-block: 12px;
     padding-inline: 14px 8px;
     border: 1px solid var(--line-strong);

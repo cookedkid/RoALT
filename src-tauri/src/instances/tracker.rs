@@ -75,6 +75,10 @@ pub struct Saved {
 /// A client that ended badly (`crash_kind`), for the crash history.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Ended {
+    #[cfg(target_os = "macos")]
+    pub pid: u32,
+    #[cfg(target_os = "macos")]
+    pub process_start: Option<u64>,
     pub instance_id: String,
     pub account_id: i64,
     pub kind: CrashKind,
@@ -810,6 +814,9 @@ impl Tracker {
                         };
                         if let Err(e) = s.db.add_crash(&row) {
                             log::warn!("could not record the end of instance {}: {e}", c.instance_id);
+                        } else {
+                            #[cfg(target_os = "macos")]
+                            crate::crash_reports::inspect(handle.clone(), c);
                         }
                     }
                     s.tracker.persist(&s.db, tick.is_multiple_of(10));
@@ -968,7 +975,7 @@ pub fn wants_rejoin(inst: &Instance, facts: &LogFacts, hung: bool) -> Option<Cra
         return None;
     }
     match inst.state {
-        InstanceState::Exited if inst.note.as_deref() == Some(&*unexpected()) => {
+        InstanceState::Exited if unexpected_note(inst.note.as_deref()) => {
             Some(if facts.disconnected { CrashKind::Disconnect } else { CrashKind::Crash })
         }
         InstanceState::Exited => None,
@@ -986,7 +993,7 @@ fn crash_kind(facts: &LogFacts, hung: bool, note: Option<&str>) -> Option<CrashK
         Some(CrashKind::Hang)
     } else if facts.disconnected && !facts.left {
         Some(CrashKind::Disconnect)
-    } else if note == Some(&*unexpected()) && !facts.left {
+    } else if unexpected_note(note) && !facts.left {
         Some(CrashKind::Crash)
     } else {
         None
@@ -995,6 +1002,10 @@ fn crash_kind(facts: &LogFacts, hung: bool, note: Option<&str>) -> Option<CrashK
 
 fn ended(e: &Entry, kind: CrashKind, now: i64) -> Ended {
     Ended {
+        #[cfg(target_os = "macos")]
+        pid: e.inst.pid,
+        #[cfg(target_os = "macos")]
+        process_start: e.start_time,
         instance_id: e.inst.id.clone(),
         account_id: e.inst.account_id,
         kind,
@@ -1008,11 +1019,29 @@ fn ended(e: &Entry, kind: CrashKind, now: i64) -> Ended {
                 #[cfg(target_os = "macos")]
                 { Some(format!("Physical footprint reached {} MB", e.mem_mb)) }
             },
+            #[cfg(target_os = "macos")]
+            CrashKind::Crash => e.facts.reason.clone().or_else(|| Some(crate::crash_reports::unknown(e.in_game_at.is_some()).into())),
             _ => e.facts.reason.clone(),
         },
         place_id: e.inst.place_id,
         log: e.log.clone(),
     }
+}
+
+impl Tracker {
+    #[cfg(target_os = "macos")]
+    pub fn explain_crash(&self, id: &str, reason: &str) {
+        if let Some(e) = self.entries().iter_mut().find(|e| e.inst.id == id
+            && e.inst.state == InstanceState::Exited && unexpected_note(e.inst.note.as_deref())) {
+            e.inst.note = Some(format!("{}: {reason}", unexpected()));
+        }
+    }
+}
+
+// Detailed crash explanations must not disable the existing auto-restart path.
+fn unexpected_note(note: Option<&str>) -> bool {
+    let base = unexpected();
+    note.is_some_and(|n| n == base || n.strip_prefix(&base).is_some_and(|rest| rest.starts_with(": ")))
 }
 
 impl Default for Tracker {
@@ -1814,6 +1843,8 @@ mod tests {
         assert_eq!(wants_rejoin(&inst(Exited, Some(UNEXPECTED)), &facts(true, true), false), None, "left, then closed");
         // Ended by itself with nothing in its log: a crash (or the window closed by hand).
         assert_eq!(wants_rejoin(&inst(Exited, Some(UNEXPECTED)), &none, false), Some(Crash));
+        let detailed = format!("{UNEXPECTED}: macOS stopped Roblox for a privacy violation.");
+        assert_eq!(wants_rejoin(&inst(Exited, Some(&detailed)), &none, false), Some(Crash));
         let mut replaced = none.clone();
         replaced.replaced = true;
         assert_eq!(wants_rejoin(&inst(Exited, Some(UNEXPECTED)), &replaced, false), None);
@@ -1885,7 +1916,11 @@ mod tests {
         // The crash went to the history; the disconnect hasn't ended yet.
         let ended = t.take_crashes();
         assert_eq!(ended.iter().map(|c| (c.instance_id.as_str(), c.kind)).collect::<Vec<_>>(), [(closed.as_str(), CrashKind::Crash)]);
-        assert_eq!((ended[0].reason.as_ref(), ended[0].uptime_ms, ended[0].log.as_ref()), (None, 2_000, Some(&log(300))));
+        #[cfg(target_os = "macos")]
+        let expected_reason = Some(crate::crash_reports::unknown(true));
+        #[cfg(windows)]
+        let expected_reason: Option<&str> = None;
+        assert_eq!((ended[0].reason.as_deref(), ended[0].uptime_ms, ended[0].log.as_ref()), (expected_reason, 2_000, Some(&log(300))));
         poll(start + 3_000);
         assert!(t.take_rejoins().is_empty());
 
@@ -2173,5 +2208,18 @@ mod tests {
         t.poll(Some(&dir), &procs, &user_of, start + 2_000);
         assert_eq!(state(&t, &id), (Exited, note("Replaced by another Roblox client"), 100));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod explanation_tests {
+    use super::*;
+    #[test]
+    fn diagnostic_detail_does_not_disable_crash_classification() {
+        let note = format!("{}: macOS stopped Roblox for a privacy violation.", unexpected());
+        assert!(unexpected_note(Some(&note)));
+        assert_eq!(crash_kind(&LogFacts::default(), false, Some(&note)), Some(CrashKind::Crash));
+        assert!(!unexpected_note(Some(&closed())));
+        assert!(!unexpected_note(Some("another unrelated note")));
     }
 }

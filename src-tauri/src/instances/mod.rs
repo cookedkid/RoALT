@@ -48,6 +48,8 @@ pub mod window;
 #[path = "macos/window.rs"]
 pub mod window;
 mod tracker;
+#[cfg(target_os = "macos")]
+pub(crate) use tracker::Ended;
 
 pub mod rejoin;
 pub use tracker::{Tracker, Transition, challenged, closed, hung, unexpected, wrong_account};

@@ -14,7 +14,7 @@ Native Apple Silicon Tauri/WKWebView build retaining the real account manager, R
 - **Window focus, minimize and restore:** target the tracked process identity. Focus uses Cocoa; minimize/restore need Accessibility permission in System Settings → Privacy & Security → Accessibility. Permission denial is reported without pretending the action succeeded.
 - **Tiling and tiny windows:** Accessibility resizes/moves only tracked windows; normal-size restoration remembers original bounds. Minimized windows are skipped, and Roblox may enforce a minimum size. Layout uses the main screen’s usable area.
 - **Live previews:** named-window-only ScreenCaptureKit screenshots on macOS 14+, with the legacy named-window capture API on older systems. Requires Screen Recording permission; denied access is shown on each preview. Minimized windows have no live preview. Rates default to 5 FPS (2/5/10 available) to limit capture overhead.
-- **Anti-AFK (opt-in):** After five seconds of inactivity, RoALT can bring a due client forward, click its center, and minimize it one second later. New manual input interrupts the operation. Requires Accessibility and Input Monitoring. Users who previously selected background mode must enable anti-AFK again.
+- **Anti-AFK (opt-in):** Matches the foreground F13 sequence in Windows v0.9.2: at the selected 1–19 minute interval (default 15), wait for five seconds of inactivity, restore minimized clients, briefly bring each due client forward, post F13 down/up through the macOS event stream, then restore prior focus and re-minimize only clients that were minimized. New manual input interrupts the operation; retry after 30 seconds. Requires Accessibility and Input Monitoring. Posting a key does not confirm Roblox accepted it; a Mac idle-kick endurance test is still required. Users who previously selected background mode must enable anti-AFK again.
 - **Accounts and vault:** isolated ephemeral Roblox login/session windows, cookie import, account metadata, validation, favorites, launch resolution, backups and recovery. The Keychain holds one random wrapping key; each encrypted database/vault record has its own nonce and authenticated purpose. Set a master password to reveal/copy cookies; Windows Hello is unavailable.
 
 - **App Nap override (opt-in):** discovers the installed Roblox bundle ID, journals the prior `NSAppSleepDisabled` boolean, and writes `YES`. Turning it off restores the prior value, removing the key if it was originally absent. External changes are preserved. Applies on the next Roblox launch; actual App Nap effects need manual verification. Mac settings and the restoration journal stay in the default RoALT support directory even when the account database is moved.
@@ -55,7 +55,7 @@ On its first launch, the macOS app requests Screen Recording, Input Monitoring a
 - [Apple process-policy implementation](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/process_policy.c): macOS limits CPU-policy changes to the calling process. Owned-child probes confirmed external changes fail with EPERM and self-set limits do not survive exec; RoALT therefore uses a supervised cooperative governor, not this private SPI.
 - [Apple ScreenCaptureKit](https://developer.apple.com/documentation/screencapturekit/capturing-screen-content-in-macos): capture filters select only the named client window. Installed SDK headers define SCScreenshotManager, Accessibility, CGEventPostToPid and listen-only event taps.
 
-Grant permissions yourself in **System Settings → Privacy & Security**, then restart RoALT. This build never presses protected permission dialogs or requests administrator access. Keep anti-AFK off unless you intend the brief focus changes and Space inputs.
+Grant permissions yourself in **System Settings → Privacy & Security**, then restart RoALT. This build never presses protected permission dialogs or requests administrator access. Keep anti-AFK off unless you intend the brief focus changes and F13 inputs.
 
 ## 0.7.1 verification
 
@@ -86,3 +86,22 @@ Both Terminal installers compare the previous and installed app CDHash after suc
 ## 0.8.1 Mac app updates
 
 Settings checks this fork's published Mac preview releases. Automatic checks are optional and run at startup and every six hours. Installation is user-initiated. The updater selects a higher numeric app version, stages the ZIP on the same volume as the running bundle, verifies GitHub's HTTPS asset digest and the release checksum, and checks the bundle identifier, version, architecture and ad-hoc signature. The trusted source is this fork's GitHub release. The ad-hoc signature alone does not establish publisher identity. Install locations are ~/Applications/RoALT.app and /Applications/RoALT.app and must be writable. Permission grants may need renewal. Launches and rejoins must finish before update handoff. An older build without the updater needs one manual upgrade first.
+
+## Foreground F13 verification
+
+Ported from [Windows v0.9.2 anti-AFK](https://github.com/inspectsoftware/RoALT/blob/v0.9.2/src-tauri/src/instances/afk.rs). Uses Mac virtual key 105 (F13), not Windows scan code 0x64. No game code is injected. The previous center click is removed.
+
+Run the focused scheduler checks with `cargo test --manifest-path src-tauri/Cargo.toml instances::afk::tests`. The native checks create keyboard events and exercise input classification and stale process rejection without posting input:
+
+```sh
+clang -fobjc-arc src-tauri/native/tests/afk_test.m -framework Cocoa -framework ApplicationServices -framework AVFoundation -o /tmp/roalt-afk-test
+/tmp/roalt-afk-test
+```
+
+Before claiming idle-kick prevention on Mac, test with Accessibility/Input Monitoring granted: a minimized and a visible client, previous-focus restoration, interruption by real keyboard/mouse activity, per-client opt-out, and at least 21 minutes of continued gameplay at the configured interval. A posted-event timestamp alone is not evidence that Roblox reset its idle timer.
+
+## 0.9.0 reliability update
+
+- Mac crash history now distinguishes an unconfirmed startup exit from an unconfirmed in-game exit. For crashes, RoALT checks `~/Library/Logs/DiagnosticReports` for modern `.ips` reports with the same RobloxPlayer PID and launch time. It retries for 40 seconds to allow delayed reports, then enriches the existing history entry and Home note. A matching TCC report can identify missing microphone/camera usage descriptions; code-signature failures, explicit memory-resource terminations, invalid memory accesses and aborts get separate explanations. SIGABRT/SIGKILL alone are not labelled out-of-memory. Raw reports are never copied into diagnostics. Missing, old, oversized or mismatched reports leave the cause unconfirmed. Auto-restart still works with detailed notes.
+- Manual CPU caps override only the CPU cap. Automatic background priority remains active, and manually enabling background priority no longer drops an automatic CPU cap. Foreground/loading/Full quality exemptions remain; memory throttling can still tighten a background cap. The existing boolean priority flag is opt-in: false inherits automatic priority; Full quality opts out of automatic limits.
+- Update-check errors identify GitHub and distinguish rate limiting from other HTTP errors. The Mac release-page URL is allowed by the opener capability. Update controls wrap, with status/error text on its own line. Current-version checks still compare numeric app versions: 0.9.0 is offered to older installations once the verified Mac release assets are published.

@@ -3617,11 +3617,12 @@ dependencies = [
 
 [[package]]
 name = "roalt"
-version = "0.8.6"
+version = "0.9.0"
 dependencies = [
  "aes-gcm",
  "argon2",
  "cc",
+ "chrono",
  "getrandom 0.4.3",
  "log",
  "reqwest",

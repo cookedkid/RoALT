@@ -109,25 +109,47 @@ fn pick(releases: Vec<Release>, current: &str) -> Result<Option<Update>> {
     }))
 }
 
+fn connection_error() -> AppError {
+    AppError::Invalid(
+        "Could not reach GitHub to check for RoALT updates. Try again or open the releases page."
+            .into(),
+    )
+}
+
+fn check_status(status: reqwest::StatusCode, headers: &reqwest::header::HeaderMap) -> Result<()> {
+    if status.as_u16() == 429
+        || (status.as_u16() == 403
+            && (headers
+                .get("x-ratelimit-remaining")
+                .is_some_and(|v| v == "0")
+                || headers.contains_key("retry-after")))
+    {
+        return Err(AppError::Invalid("GitHub temporarily limited update checks. Try later or open the releases page to download now.".into()));
+    }
+    if !status.is_success() {
+        return Err(AppError::Invalid(format!(
+            "GitHub returned HTTP {}. Try later or open the releases page.",
+            status.as_u16()
+        )));
+    }
+    Ok(())
+}
+
 async fn latest() -> Result<Option<Update>> {
     let client = reqwest::Client::builder()
         .user_agent("RoALT-Mac-Updater")
         .redirect(reqwest::redirect::Policy::none())
         .timeout(Duration::from_secs(25))
         .build()
-        .map_err(|e| AppError::Network(e.to_string()))?;
+        .map_err(|_| connection_error())?;
     let mut response = client
         .get(FEED)
         .send()
         .await
-        .and_then(|r| r.error_for_status())
-        .map_err(|e| AppError::Network(format!("Could not check GitHub releases: {e}")))?;
+        .map_err(|_| connection_error())?;
+    check_status(response.status(), response.headers())?;
     let mut data = Vec::new();
-    while let Some(chunk) = response
-        .chunk()
-        .await
-        .map_err(|e| AppError::Network(e.to_string()))?
-    {
+    while let Some(chunk) = response.chunk().await.map_err(|_| connection_error())? {
         if data.len() + chunk.len() > 4_000_000 {
             return Err(AppError::Invalid("Release list too large.".into()));
         }
@@ -357,5 +379,50 @@ mod tests {
         let mut r = release("macos-preview-1.0.0-1");
         r.assets.pop();
         assert!(pick(vec![r], "0.8.1").is_err());
+    }
+}
+
+#[cfg(test)]
+mod error_tests {
+    use super::*;
+    #[test]
+    fn github_failures_are_not_reported_as_roblox_outages() {
+        let mut headers = reqwest::header::HeaderMap::new();
+        assert!(check_status(reqwest::StatusCode::OK, &headers).is_ok());
+        assert!(
+            check_status(reqwest::StatusCode::TOO_MANY_REQUESTS, &headers)
+                .unwrap_err()
+                .to_string()
+                .contains("temporarily limited")
+        );
+        let forbidden = check_status(reqwest::StatusCode::FORBIDDEN, &headers)
+            .unwrap_err()
+            .to_string();
+        assert!(forbidden.contains("GitHub returned HTTP 403"));
+        headers.insert("x-ratelimit-remaining", "0".parse().unwrap());
+        assert!(
+            check_status(reqwest::StatusCode::FORBIDDEN, &headers)
+                .unwrap_err()
+                .to_string()
+                .contains("temporarily limited")
+        );
+        let error = connection_error();
+        assert_eq!(error.kind(), "invalid"); // UI must display our GitHub message verbatim.
+        assert!(error.to_string().contains("GitHub"));
+        assert!(!error.to_string().contains("Roblox"));
+    }
+    #[test]
+    fn mac_release_button_destination_is_allowed() {
+        let capability: serde_json::Value =
+            serde_json::from_str(include_str!("../../capabilities/main.json")).unwrap();
+        assert!(
+            capability["permissions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|p| p["identifier"] == "opener:allow-open-url")
+                .flat_map(|p| p["allow"].as_array().unwrap())
+                .any(|p| p["url"] == "https://github.com/cookedkid/RoALT/releases")
+        );
     }
 }
