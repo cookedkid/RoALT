@@ -62,6 +62,8 @@ const FLOOR: u32 = 25;
 const TRIM_RETRY: Duration = Duration::from_secs(60);
 /// How long after a trim its client's memory is logged: what shows whether trims help.
 const TRIM_FOLLOW_SECS: [u64; 3] = [10, 60, 300];
+/// How long a gone client's summary waits for `at_end`: past the tracker's 120 s `REBIND_MS`.
+const GONE_FOR: Duration = Duration::from_secs(300);
 
 /// A trim whose effect is still being logged.
 struct TrimFollow {
@@ -106,12 +108,32 @@ struct Applied {
     failed: Option<Limits>,
     /// Its last CPU cap wasn't set (`plan` keeps it pinned then).
     cap_failed: bool,
+    /// When a CPU cap, efficiency mode or cores were last set on it, and when it was last trimmed
+    /// (on schedule or by hand), for `summary`: each opens a handle on the client.
+    changed: Option<Instant>,
+    trimmed_at: Option<Instant>,
 }
 
 impl Applied {
     fn new(pid: u32, t0: u64) -> Applied {
         let now = Instant::now();
-        Applied { pid, t0, job: None, limits: Limits::default(), next_trim: now, last_trim: None, baseline: None, steady: None, look_at: now, gap: TRIM_GAP, regrew: false, failed: None, cap_failed: false }
+        Applied {
+            pid,
+            t0,
+            job: None,
+            limits: Limits::default(),
+            next_trim: now,
+            last_trim: None,
+            baseline: None,
+            steady: None,
+            look_at: now,
+            gap: TRIM_GAP,
+            regrew: false,
+            failed: None,
+            cap_failed: false,
+            changed: None,
+            trimmed_at: None,
+        }
     }
 
     /// It is being trimmed at `now`, on a schedule of `every` minutes.
@@ -149,11 +171,47 @@ pub struct Limiter {
     applied: Mutex<HashMap<String, Applied>>,
     free: Mutex<(Vec<String>, Option<u32>)>,
     follows: Mutex<Vec<TrimFollow>>,
+    /// Clients followed again after a restart that were already in a job (`reset_followed`).
+    old_jobs: Mutex<Vec<u32>>,
+    /// `summary` of the instances `sync` forgot, by id, and when: the tracker may give a gone client
+    /// up only `REBIND_MS` later. Taken by `at_end`, else dropped after `GONE_FOR`.
+    gone: Mutex<HashMap<String, (Instant, String)>>,
 }
 
 impl Limiter {
     pub fn new() -> Limiter {
-        Limiter { applied: Mutex::new(HashMap::new()), free: Mutex::new((Vec::new(), None)), follows: Mutex::new(Vec::new()) }
+        Limiter {
+            applied: Mutex::new(HashMap::new()),
+            free: Mutex::new((Vec::new(), None)),
+            follows: Mutex::new(Vec::new()),
+            old_jobs: Mutex::new(Vec::new()),
+            gone: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Client `pid` was already in a job when followed again after a restart.
+    pub fn mark_old_job(&self, pid: u32) {
+        self.old_jobs.lock().unwrap_or_else(|e| e.into_inner()).push(pid);
+    }
+
+    /// What RoALT was doing to instance `id` (process `pid`) as it ended, for the autopsy.
+    pub fn at_end(&self, id: &str, pid: u32) -> String {
+        if let Some((_, s)) = self.gone.lock().unwrap_or_else(|e| e.into_inner()).remove(id) {
+            return s;
+        }
+        let map = self.applied.lock().unwrap_or_else(|e| e.into_inner());
+        self.summary_of(id, pid, map.get(id), Instant::now())
+    }
+
+    /// `summary` with what the limiter knows of the client besides `a`. Takes `free` and
+    /// `old_jobs`: call it with `applied` locked or not, never the other way round.
+    fn summary_of(&self, id: &str, pid: u32, a: Option<&Applied>, now: Instant) -> String {
+        let old_job = self.old_jobs.lock().unwrap_or_else(|e| e.into_inner()).contains(&pid);
+        let free = {
+            let f = self.free.lock().unwrap_or_else(|e| e.into_inner());
+            f.1 == Some(pid) || f.0.iter().any(|x| x == id)
+        };
+        summary(a, old_job, free, now)
     }
 
     /// Trims the client and logs its memory now and at `TRIM_FOLLOW_SECS` after. The Memory column
@@ -162,6 +220,9 @@ impl Limiter {
         let read = || super::metrics::read(pid, t0);
         let before = read();
         trim(pid, t0).inspect_err(|e| log::warn!("trim of client {pid} ({why}) failed: {e}"))?;
+        if let Some(a) = self.applied.lock().unwrap_or_else(|e| e.into_inner()).values_mut().find(|a| (a.pid, a.t0) == (pid, t0)) {
+            a.trimmed_at = Some(Instant::now());
+        }
         let after = read();
         let line = |r: &Option<super::metrics::Reading>| r.as_ref().map_or_else(|| "unreadable".to_owned(), memory_line);
         log::info!("trim of client {pid} ({why}): before: {}; right after: {}", line(&before), line(&after));
@@ -211,6 +272,9 @@ impl Limiter {
         // No cap wanted: none to have failed, whether or not one is being taken off now.
         if limits.cpu_cap.is_none() {
             a.cap_failed = false;
+        }
+        if (limits.cpu_cap, limits.eco, limits.affinity) != (a.limits.cpu_cap, a.limits.eco, a.limits.affinity) {
+            a.changed = Some(Instant::now());
         }
         if limits.cpu_cap != a.limits.cpu_cap {
             let done = a.set_job_cap(limits.cpu_cap);
@@ -342,7 +406,19 @@ impl Limiter {
         if RELEASED.load(std::sync::atomic::Ordering::Relaxed) {
             return;
         }
-        self.applied.lock().unwrap_or_else(|e| e.into_inner()).retain(|id, _| clients.iter().any(|c| c.0 == *id));
+        let now = Instant::now();
+        {
+            let mut map = self.applied.lock().unwrap_or_else(|e| e.into_inner());
+            let running = |id: &str| clients.iter().any(|c| c.0 == id);
+            let mut gone = self.gone.lock().unwrap_or_else(|e| e.into_inner());
+            gone.retain(|_, (at, _)| now.saturating_duration_since(*at) < GONE_FOR);
+            for (id, a) in map.iter().filter(|(id, _)| !running(id)) {
+                gone.insert(id.clone(), (now, self.summary_of(id, a.pid, Some(a), now)));
+            }
+            drop(gone);
+            map.retain(|id, _| running(id));
+        }
+        self.old_jobs.lock().unwrap_or_else(|e| e.into_inner()).retain(|pid| clients.iter().any(|c| c.1 == *pid));
         for (id, pid, t0, limits) in clients {
             let failed = {
                 let map = self.applied.lock().unwrap_or_else(|e| e.into_inner());
@@ -359,7 +435,6 @@ impl Limiter {
                 a.failed = r.is_err().then_some(*limits);
             }
         }
-        let now = Instant::now();
         let free = self.free.lock().unwrap_or_else(|e| e.into_inner()).clone();
         let is_free = |id: &str, pid: u32| free.1 == Some(pid) || free.0.iter().any(|f| f == id);
         if let Some((pid, t0)) = self.due_trim(now).or_else(|| self.grown_trim(now, is_free, |pid, t0| super::metrics::read(pid, t0).map(|r| r.memory)))
@@ -377,17 +452,37 @@ impl Limiter {
 // reach a process's job without one. So after RoALT is killed the old cap stays until the client
 // closes (a new job nests inside it), even on the client played. A helper process holding the job
 // handles would lift it. Being in a job doesn't prove a cap (one taken off leaves its job behind),
-// so this is only logged.
-pub fn reset_followed(pid: u32, t0: u64) {
+// so this is only logged. Returns whether it is in a job.
+pub fn reset_followed(pid: u32, t0: u64) -> bool {
     if let Err(e) = set_eco(pid, t0, false).and_then(|()| set_affinity(pid, t0, None)) {
         log::warn!("could not reset the limits of client {pid}: {e}");
     }
-    let Ok(h) = client(pid, t0, PROCESS_QUERY_LIMITED_INFORMATION) else { return };
+    let Ok(h) = client(pid, t0, PROCESS_QUERY_LIMITED_INFORMATION) else { return false };
     let mut inside = BOOL(0);
     // SAFETY: `h` is live; `inside` is a local.
-    if unsafe { IsProcessInJob(*h, None, &mut inside) }.is_ok() && inside.as_bool() {
+    let inside = unsafe { IsProcessInJob(*h, None, &mut inside) }.is_ok() && inside.as_bool();
+    if inside {
         log::info!("client {pid} is already in a job: a CPU cap from before RoALT restarted may stay on until it closes");
     }
+    inside
+}
+
+/// What RoALT was doing to a client (pure, `a` as applied to it, `now` when asked): its limits,
+/// how long since they were last set and since it was last trimmed, whether it carried a job from
+/// before a RoALT restart, and whether it ran free (in front or played). For the autopsy, to see
+/// whether disconnects follow any of these.
+fn summary(a: Option<&Applied>, old_job: bool, free: bool, now: Instant) -> String {
+    let ago = |t: Option<Instant>| t.map_or_else(|| "never".to_owned(), |t| format!("{} s before", now.saturating_duration_since(t).as_secs()));
+    let l = a.map(|a| a.limits).unwrap_or_default();
+    format!(
+        "CPU cap {}, efficiency mode {}, cores {}, trim every {}; limits last set {}, last trimmed {}; in a job from before a RoALT restart: {old_job}; in front or played: {free}",
+        l.cpu_cap.map_or_else(|| "none".to_owned(), |c| format!("{c} %")),
+        if l.eco { "on" } else { "off" },
+        l.affinity.map_or_else(|| "all".to_owned(), |m| format!("{m:#x}")),
+        l.trim_every_min.filter(|&m| m > 0).map_or_else(|| "off".to_owned(), |m| format!("{m} min")),
+        ago(a.and_then(|a| a.changed)),
+        ago(a.and_then(|a| a.trimmed_at)),
+    )
 }
 
 /// The accounts the user plays: Full quality ones, and the one Clips record (a clip shows it).
@@ -907,6 +1002,44 @@ mod tests {
         assert_eq!(pin(0, 3, 4), 0b1001);
         assert_eq!((pin(0, 6, 4), pin(4, 6, 4), pin(5, 6, 4)), (1, 1, 2));
         assert_eq!(pin(63, 100, 200), 1 << 63, "at most 64 cores");
+    }
+
+    #[test]
+    fn the_summary_says_what_was_done_to_a_client_and_when() {
+        let now = Instant::now() + Duration::from_secs(1000);
+        assert_eq!(
+            summary(None, false, true, now),
+            "CPU cap none, efficiency mode off, cores all, trim every off; limits last set never, last trimmed never; in a job from before a RoALT restart: false; in front or played: true"
+        );
+        let mut a = Applied::new(7, 9);
+        a.limits = Limits { cpu_cap: Some(25), eco: true, affinity: Some(0xF), trim_every_min: Some(10) };
+        (a.changed, a.trimmed_at) = (Some(now - Duration::from_secs(312)), Some(now - Duration::from_secs(4)));
+        assert_eq!(
+            summary(Some(&a), true, false, now),
+            "CPU cap 25 %, efficiency mode on, cores 0xf, trim every 10 min; limits last set 312 s before, last trimmed 4 s before; in a job from before a RoALT restart: true; in front or played: false"
+        );
+    }
+
+    #[test]
+    fn a_client_sync_forgets_is_summed_up_once_while_the_tracker_waits_to_give_it_up() {
+        let l = Limiter::new();
+        let mut a = Applied::new(7, 9);
+        a.limits.cpu_cap = Some(40);
+        l.applied.lock().unwrap().insert("i".into(), a);
+        l.mark_old_job(7);
+        assert!(l.at_end("i", 7).starts_with("CPU cap 40 %") && l.at_end("i", 7).contains("restart: true"), "still running");
+        // Gone, then many polls before the tracker gives it up.
+        for _ in 0..3 {
+            l.sync(&[]);
+        }
+        assert!(l.applied.lock().unwrap().is_empty() && l.old_jobs.lock().unwrap().is_empty());
+        let end = l.at_end("i", 7);
+        assert!(end.starts_with("CPU cap 40 %") && end.contains("restart: true"), "{end}");
+        assert!(l.at_end("i", 7).starts_with("CPU cap none"), "taken once");
+        // One nobody asks after goes in time.
+        l.gone.lock().unwrap().insert("j".into(), (Instant::now() - GONE_FOR, "old".into()));
+        l.sync(&[]);
+        assert!(l.gone.lock().unwrap().is_empty());
     }
 
     #[test]

@@ -1234,7 +1234,9 @@ impl Tracker {
                     {
                         log::warn!("could not record playtime: {e}");
                     }
-                    for c in s.tracker.take_crashes() {
+                    for mut c in s.tracker.take_crashes() {
+                        // Asked now: the limiter forgets a gone client at its next sync.
+                        c.clues.push_str(&format!("; RoALT's limits at the end: {}", s.limiter.at_end(&c.instance_id, c.pid)));
                         log::warn!(
                             "instance {} of account {} ended: {:?}, given up on after {} s (gone after {:?} ms), place {:?}, reason {:?}",
                             c.instance_id,
@@ -1382,7 +1384,9 @@ fn restore(app: &AppHandle) {
     let roblox = with_unreadable(&saved, process::roblox_processes(), process::unreadable_client);
     let found = s.tracker.readopt(saved, &roblox, &super::limits::played(&s, &s.db.settings().unwrap_or_default()));
     for &(pid, t0) in &found {
-        super::limits::reset_followed(pid, t0);
+        if super::limits::reset_followed(pid, t0) {
+            s.limiter.mark_old_job(pid);
+        }
     }
     s.multi.adopt(&found);
     log::info!("following {} client(s) from before RoALT restarted", found.len());
