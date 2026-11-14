@@ -426,5 +426,6 @@
   "Clip saved: {name}": "Klipp sparat: {name}",
   "The clip wasn't saved: {why}": "Klippet sparades inte: {why}",
   "That name can't be a file name: leave out symbols like / : * ? < > |.": "Det namnet kan inte vara ett filnamn: utelämna tecken som / : * ? < > |.",
-  "A clip with that name already exists.": "Det finns redan ett klipp med det namnet."
+  "A clip with that name already exists.": "Det finns redan ett klipp med det namnet.",
+  "This game only lets players into that place through its start place, so the account starts there.": "Det här spelet släpper bara in spelare på den platsen via startplatsen, så kontot börjar där."
 }

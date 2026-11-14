@@ -832,6 +832,53 @@ async fn direct_targets_need_no_call_and_long_launch_data_is_dropped() {
 }
 
 #[tokio::test]
+async fn join_refused_reads_status_12() {
+    let refused = r#"{"jobId":null,"status":12,"message":"You don't have permission to join this game."}"#;
+    let (base, reqs) = serve(vec![csrf_403(), ok(refused), ok(r#"{"status":2,"jobId":"x"}"#)]);
+    let (c, _) = client(&base);
+    let cookie = Secret::new("OLD");
+    assert!(c.join_refused(4, &cookie, 3541987450).await.unwrap());
+    assert!(!c.join_refused(4, &cookie, 3541987450).await.unwrap());
+
+    reqs.recv().unwrap();
+    let req = reqs.recv().unwrap();
+    assert_eq!(first_line(&req), "POST /v1/join-game HTTP/1.1");
+    assert!(has(&req, "\r\nx-csrf-token: TOK\r\n") && has(&req, "\r\ncookie: .ROBLOSECURITY=OLD\r\n"));
+    assert!(has(&req, "\r\norigin: https://www.roblox.com\r\n"));
+    let body = body_of(&req);
+    assert_eq!((&body["placeId"], &body["isTeleport"]), (&serde_json::json!(3541987450_i64), &serde_json::json!(false)));
+    assert!(body["gameJoinAttemptId"].as_str().is_some_and(crate::launcher::target::is_uuid));
+}
+
+#[tokio::test]
+async fn refused_sub_places_go_through_the_start_place_once_learnt() {
+    use crate::launcher::through_start_place;
+    let universe = |id| ok(&format!(r#"{{"universeId":{id}}}"#));
+    let root = |u, p| ok(&format!(r#"{{"data":[{{"id":{u},"rootPlaceId":{p},"name":"G"}}]}}"#));
+    let refused = ok(r#"{"status":12}"#);
+    let (base, reqs) = serve(vec![universe(901), root(901, 9010), refused, universe(902), root(902, 9020), ok(r#"{"status":2}"#), universe(903), root(903, 9030)]);
+    let (c, _) = client(&base);
+    let cookie = Secret::new("OLD");
+    let job = |place_id| Join::Job { place_id, job_id: JOB.into() };
+
+    // A refused sub-place: its server join becomes the game at its start place, with a note.
+    let (join, note) = through_start_place(&c, 4, &cookie, job(9011), Some("Expired.".into())).await;
+    assert_eq!(join, Join::Game { place_id: 9010, launch_data: None });
+    assert!(note.unwrap().starts_with("Expired. This game only lets players"));
+    // Learnt: the next launch there asks nothing (a call would hit the next canned answer).
+    let game = Join::Game { place_id: 9011, launch_data: Some("d".into()) };
+    assert_eq!(through_start_place(&c, 4, &cookie, game, None).await.0, Join::Game { place_id: 9010, launch_data: Some("d".into()) });
+    // A sub-place that takes direct joins, and a start place (never asked about), stay as they are.
+    assert_eq!(through_start_place(&c, 4, &cookie, job(9021), None).await, (job(9021), None));
+    assert_eq!(through_start_place(&c, 4, &cookie, job(9030), None).await, (job(9030), None));
+    assert_eq!(reqs.try_iter().count(), 8);
+    // Nothing to ask without a place, and a failed lookup launches as asked.
+    let follow = Join::Follow { user_id: 1 };
+    assert_eq!(through_start_place(&c, 4, &cookie, follow.clone(), None).await, (follow, None));
+    assert_eq!(through_start_place(&c, 4, &cookie, job(9041), None).await, (job(9041), None));
+}
+
+#[tokio::test]
 async fn users_by_name_excludes_banned_and_sends_no_cookie() {
     let found = String::from_utf8(fixture_body("authlaunch-csrf-users-v1-usernames-nocsrf.json")).unwrap();
     let (base, reqs) = serve(vec![ok(&found)]);

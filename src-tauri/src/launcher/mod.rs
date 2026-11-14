@@ -155,6 +155,7 @@ pub async fn launch(s: &App, account_id: i64, target: &LaunchTarget, fps_cap: Op
     let (exe, production, self_updates) = update::launch_client(s).await?;
     let args = args_for(s, account_id)?;
     let (join, warning) = resolve(&s.api, account_id, &cookie, target).await?;
+    let (join, warning) = through_start_place(&s.api, account_id, &cookie, join, warning).await;
     // After everything that can refuse the launch, so a refused one builds no copy.
     // Up to a few seconds of file work (a plain copy where links fail): off the async workers.
     let (exe, mods_skipped) = tokio::task::block_in_place(|| crate::mods::runtime::prepare(s, exe, self_updates));
@@ -343,6 +344,53 @@ async fn share_place(api: &Client, t: &ShareTarget) -> Result<i64> {
         (Some(place_id), _) => Ok(place_id),
         (None, Some(universe_id)) => root_place(api, universe_id).await,
         (None, None) => Err(no_longer_valid()),
+    }
+}
+
+/// Place → its game's start place when Roblox refuses direct joins to it (a sub-place of a game
+/// with "Allow direct access" off), None when it is launched as it is. Learnt once per run.
+// shortcut: per place, not per account; an account refused for its own reason (an unbought paid game) sends the rest through the start place too.
+static START_INSTEAD: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<i64, Option<i64>>>> =
+    std::sync::LazyLock::new(Default::default);
+
+/// A game or server join into a place Roblox won't let anyone straight into (RoALT learns
+/// sub-places from the client's log after the game teleports there) goes to the game's start
+/// place instead, which sends the player on. Any failed lookup launches as asked.
+pub(crate) async fn through_start_place(
+    api: &Client,
+    account_id: i64,
+    cookie: &Secret,
+    join: Join,
+    warning: Option<String>,
+) -> (Join, Option<String>) {
+    let (place_id, launch_data) = match &join {
+        Join::Game { place_id, launch_data } => (*place_id, launch_data.clone()),
+        Join::Job { place_id, .. } => (*place_id, None),
+        _ => return (join, warning),
+    };
+    let Some(start) = start_place_instead(api, account_id, cookie, place_id).await else { return (join, warning) };
+    log::info!("place {place_id} refuses direct joins: account {account_id} goes through start place {start}");
+    let note = tr!("This game only lets players into that place through its start place, so the account starts there.");
+    (Join::Game { place_id: start, launch_data }, Some(warning.map_or_else(|| note.clone(), |w| format!("{w} {note}"))))
+}
+
+async fn start_place_instead(api: &Client, account_id: i64, cookie: &Secret, place_id: i64) -> Option<i64> {
+    let cache = || START_INSTEAD.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some(known) = cache().get(&place_id) {
+        return *known;
+    }
+    let found = async {
+        let Some(universe_id) = api.place_universe(place_id).await? else { return Ok(None) };
+        let start = root_place(api, universe_id).await?;
+        // Only a sub-place is asked about: a start place is launched as it is.
+        Ok::<_, AppError>((start != place_id && api.join_refused(account_id, cookie, place_id).await?).then_some(start))
+    };
+    match found.await {
+        Ok(start) => *cache().entry(place_id).or_insert(start),
+        Err(e) => {
+            log::info!("could not tell whether place {place_id} takes direct joins, launched as asked: {e}");
+            None
+        }
     }
 }
 

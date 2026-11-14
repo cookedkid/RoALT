@@ -415,5 +415,6 @@
   "Clip saved: {name}": "剪辑已保存：{name}",
   "The clip wasn't saved: {why}": "剪辑未保存：{why}",
   "That name can't be a file name: leave out symbols like / : * ? < > |.": "该名称不能用作文件名：请去掉 / : * ? < > | 等符号。",
-  "A clip with that name already exists.": "已存在同名剪辑。"
+  "A clip with that name already exists.": "已存在同名剪辑。",
+  "This game only lets players into that place through its start place, so the account starts there.": "这个游戏只允许从起始地点进入那个地方，所以账号会从那里开始。"
 }

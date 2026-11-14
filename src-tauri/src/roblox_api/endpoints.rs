@@ -28,6 +28,8 @@ pub const SHARE_LINK_V2: &str = "https://apis.roblox.com/deeplinks/v2/resolve";
 pub const GAMES: &str = "https://games.roblox.com/v1/games?universeIds={}";
 pub const USERS_BY_NAME: &str = "https://users.roblox.com/v1/usernames/users";
 pub const FRIENDS_ONLINE: &str = "https://friends.roblox.com/v1/users/{}/friends/online";
+/// What the client asks before it joins a game (cookie + CSRF); unrecorded signed in.
+pub const JOIN_GAME: &str = "https://gamejoin.roblox.com/v1/join-game";
 
 // Friending stored accounts with each other. Statuses is in the public spec (Experimental); the
 // two POSTs are no longer listed there but are what the website calls.

@@ -227,12 +227,16 @@
     font-weight: 600;
     letter-spacing: -0.01em;
   }
+  /* One row at any panel width: tabs shrink and long labels end in "…" instead of wrapping. */
   .acc-tabs {
     display: flex;
+    flex-wrap: nowrap;
   }
   .acc-tabs .seg {
-    flex: 1 1 0;
+    flex: 1 1 auto;
+    min-width: 0;
     justify-content: center;
+    padding-inline: 8px;
   }
   .acc-sec {
     display: flex;

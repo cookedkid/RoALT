@@ -415,5 +415,6 @@
   "Clip saved: {name}": "클립 저장됨: {name}",
   "The clip wasn't saved: {why}": "클립을 저장하지 못했어요: {why}",
   "That name can't be a file name: leave out symbols like / : * ? < > |.": "파일 이름으로 쓸 수 없는 이름이에요. / : * ? < > | 같은 기호는 빼 주세요.",
-  "A clip with that name already exists.": "같은 이름의 클립이 이미 있어요."
+  "A clip with that name already exists.": "같은 이름의 클립이 이미 있어요.",
+  "This game only lets players into that place through its start place, so the account starts there.": "이 게임은 시작 플레이스를 거쳐야만 그곳에 들어갈 수 있어서, 계정이 시작 플레이스에서 시작합니다."
 }

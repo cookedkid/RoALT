@@ -66,6 +66,11 @@ $env:PATH = "$perl;$env:PATH"
 Write-Host "Building RoALT $version (release)"
 # Set or cleared for every build: a release must never inherit it from the shell.
 $env:ROALT_DEV = if ($Dev) { '1' } else { $null }
+# An indev build's PDB has RoALT's function names (debug info goes in the PDB, not the exe), so a
+# stuck main thread's stack in the log (`watchdog`) can be named. LTO makes them internal: public
+# symbols alone don't name them.
+$env:CARGO_PROFILE_RELEASE_STRIP = if ($Dev) { 'none' } else { $null }
+$env:CARGO_PROFILE_RELEASE_DEBUG = if ($Dev) { 'line-tables-only' } else { $null }
 Push-Location $root
 try {
     if (-not (Test-Path node_modules)) {
@@ -97,6 +102,9 @@ $setup = Get-Item "$root\dist-installer\RoALT-Setup-$version.exe"
 if ($Dev) {
     New-Item -ItemType Directory -Force "$root\installers" | Out-Null
     $setup = Copy-Item $setup.FullName "$root\installers\RoALT-Setup-$version-dev-$(Get-Date -Format 'yyyyMMdd-HHmm').exe" -PassThru
+    # This build's exe and PDB beside it: what names its frames in a watchdog log line.
+    $syms = New-Item -ItemType Directory -Force ($setup.FullName -replace '\.exe$', '-symbols')
+    Copy-Item $exe, ($exe -replace '\.exe$', '.pdb') $syms.FullName
 }
 Write-Host ''
 Write-Host "Installer: $($setup.FullName)" -ForegroundColor Green

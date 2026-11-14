@@ -426,5 +426,6 @@
   "Clip saved: {name}": "Na-save ang clip: {name}",
   "The clip wasn't saved: {why}": "Hindi na-save ang clip: {why}",
   "That name can't be a file name: leave out symbols like / : * ? < > |.": "Hindi puwedeng file name ang pangalang iyon: huwag gumamit ng mga simbolo gaya ng / : * ? < > |.",
-  "A clip with that name already exists.": "May clip na may ganyang pangalan na."
+  "A clip with that name already exists.": "May clip na may ganyang pangalan na.",
+  "This game only lets players into that place through its start place, so the account starts there.": "Sa start place lang ng larong ito makakapasok ang mga player sa lugar na iyon, kaya doon magsisimula ang account."
 }

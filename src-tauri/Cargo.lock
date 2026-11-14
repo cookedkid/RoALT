@@ -3610,7 +3610,7 @@ dependencies = [
 
 [[package]]
 name = "roalt"
-version = "1.2.0"
+version = "1.2.301"
 dependencies = [
  "aes-gcm",
  "argon2",

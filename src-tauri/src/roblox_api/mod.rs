@@ -269,6 +269,19 @@ impl Client {
         Ok(self.games(universe_ids).await?.into_iter().map(|g| (g.universe_id, (g.root_place_id, g.name))).collect())
     }
 
+    /// `POST gamejoin.roblox.com/v1/join-game {placeId}` (cookie + CSRF): true when Roblox answers
+    /// status 12, "You don't have permission to join this game" (error 524 in the client), as it
+    /// does for a sub-place of a game with direct access turned off. No client joins from this;
+    /// a seat Roblox may hold for the answer lapses.
+    pub async fn join_refused(&self, account_id: i64, cookie: &Secret, place_id: i64) -> Result<bool> {
+        const UNAUTHORIZED: i64 = 12;
+        let url = endpoints::JOIN_GAME;
+        let attempt = uuid::Uuid::new_v4().to_string();
+        let body = serde_json::json!({ "placeId": place_id, "isTeleport": false, "gameJoinAttemptId": attempt });
+        let (_, bytes, _) = self.request(Method::POST, url, url, Some(&body), account_id, Some(cookie)).await?;
+        Ok(field::<i64>(json(&bytes)?, "status")? == UNAUTHORIZED)
+    }
+
     /// `POST users.roblox.com/v1/usernames/users {usernames ≤200, excludeBannedUsers:true}`
     /// (no cookie). Matches previous usernames too; unknown names are absent.
     pub async fn users_by_name(&self, names: &[String]) -> Result<Vec<AuthenticatedUser>> {
@@ -1244,7 +1257,7 @@ impl Client {
             AppError::Internal("bad Roblox URL".into())
         };
         let mut u = Url::parse(url).map_err(bad)?;
-        let web = matches!(u.host_str(), Some("auth.roblox.com" | "apis.roblox.com"));
+        let web = matches!(u.host_str(), Some("auth.roblox.com" | "apis.roblox.com" | "gamejoin.roblox.com"));
         if let Some(base) = &self.base {
             u = Url::parse(&format!("{base}{}", &u[url::Position::BeforePath..])).map_err(bad)?;
         }

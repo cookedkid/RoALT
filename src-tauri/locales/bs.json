@@ -437,5 +437,6 @@
   "Clip saved: {name}": "Klip sačuvan: {name}",
   "The clip wasn't saved: {why}": "Klip nije sačuvan: {why}",
   "That name can't be a file name: leave out symbols like / : * ? < > |.": "Taj naziv ne može biti naziv datoteke: izostavite simbole kao / : * ? < > |.",
-  "A clip with that name already exists.": "Klip s tim nazivom već postoji."
+  "A clip with that name already exists.": "Klip s tim nazivom već postoji.",
+  "This game only lets players into that place through its start place, so the account starts there.": "Ova igra pušta igrače na to mjesto samo preko početnog mjesta, pa račun počinje tamo."
 }

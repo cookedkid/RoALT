@@ -470,5 +470,6 @@
   "Clip saved: {name}": "حُفظ المقطع: {name}",
   "The clip wasn't saved: {why}": "لم يُحفظ المقطع: {why}",
   "That name can't be a file name: leave out symbols like / : * ? < > |.": "لا يصلح هذا الاسم اسمًا لملف: تجنّب رموزًا مثل / : * ? < > |.",
-  "A clip with that name already exists.": "يوجد مقطع بهذا الاسم بالفعل."
+  "A clip with that name already exists.": "يوجد مقطع بهذا الاسم بالفعل.",
+  "This game only lets players into that place through its start place, so the account starts there.": "هذه اللعبة لا تُدخل اللاعبين إلى ذلك المكان إلا عبر مكان البداية، لذا يبدأ الحساب من هناك."
 }

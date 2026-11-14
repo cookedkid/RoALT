@@ -28,6 +28,7 @@ mod storage;
 mod tray;
 mod vault;
 mod watch;
+mod watchdog;
 mod webview;
 
 use std::io::ErrorKind;
@@ -495,7 +496,8 @@ fn init(app: &TauriApp, data_dir: &Path, moved_from: Option<&Path>) -> std::resu
     mods::library::sweep(&app.state::<App>().db);
     // Opened by a `roalt://` link: Play takes it once the UI is up. A Play click on roblox.com
     // starts its client now, ahead of the rest.
-    let quiet = !commands::open_link(app.handle(), std::env::args().skip(1));
+    // Restarted by the watchdog: back in the tray, as it was.
+    let quiet = !commands::open_link(app.handle(), std::env::args().skip(1)) || std::env::args().any(|a| a == watchdog::TRAY_ARG);
     if let Err(e) = commands::set_panic_hotkey(app.handle(), "", &settings.panic_hotkey) {
         let handle = app.handle().clone();
         // Said once the window is up.
@@ -555,7 +557,25 @@ fn init(app: &TauriApp, data_dir: &Path, moved_from: Option<&Path>) -> std::resu
     rpc::spawn(app.handle().clone());
     launcher::update::spawn(app.handle().clone());
     remind_bandwidth(app.handle().clone());
+    watchdog::spawn(app.handle().clone());
     Ok(())
+}
+
+/// What quitting does once the window is gone; also the watchdog's restart, off the main thread.
+pub(crate) fn exit_cleanup(app: &AppHandle) {
+    // The next start follows the running clients again (`Tracker::readopt`).
+    let Some(s) = app.try_state::<App>() else { return };
+    s.tracker.persist(&s.db, true);
+    // Time in a game counted since the last minute's write.
+    let now = commands::now_ms();
+    if let Err(e) = s.db.add_playtime(&s.tracker.take_playtime(now, true), now) {
+        log::warn!("could not record playtime at exit: {e}");
+    }
+    s.limiter.release_all();
+    launcher::client_settings::restore(&s.db);
+    launcher::flags::restore();
+    // Profiles left marked go at the next start (`init`): their browsers may still be exiting now,
+    // and waiting for them here would hold up quitting.
 }
 
 /// Windows drops the bandwidth policy when it restarts; RoALT never sets it again on its own
@@ -642,6 +662,7 @@ fn on_window_event(window: &tauri::Window, event: &WindowEvent) {
 }
 
 fn main() {
+    watchdog::wait_for_previous();
     webview::clear_webview2_env();
     // Windows' language until the settings are read.
     i18n::set("");
@@ -889,6 +910,7 @@ fn main() {
         .run(|app, event| {
             // Before the Exit event: the clipboard plugin has cleaned up by then.
             if let tauri::RunEvent::ExitRequested { code, api, .. } = &event {
+                watchdog::exiting();
                 // Browse keeps its account's newest cookie as it closes, which can't run here on
                 // the main thread: quit once it has. A restart can't wait; the next start sweeps.
                 if browse::is_open() && *code != Some(tauri::RESTART_EXIT_CODE) {
@@ -904,20 +926,7 @@ fn main() {
             }
             if let tauri::RunEvent::Exit = event {
                 log::info!("shutting down");
-                // The next start follows the running clients again (`Tracker::readopt`).
-                if let Some(s) = app.try_state::<App>() {
-                    s.tracker.persist(&s.db, true);
-                    // Time in a game counted since the last minute's write.
-                    let now = commands::now_ms();
-                    if let Err(e) = s.db.add_playtime(&s.tracker.take_playtime(now, true), now) {
-                        log::warn!("could not record playtime at exit: {e}");
-                    }
-                    s.limiter.release_all();
-                    launcher::client_settings::restore(&s.db);
-                    launcher::flags::restore();
-                    // Profiles left marked go at the next start (`init`): their browsers may still
-                    // be exiting now, and waiting for them here would hold up quitting.
-                }
+                exit_cleanup(app);
             }
         });
 }

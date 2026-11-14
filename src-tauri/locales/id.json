@@ -415,5 +415,6 @@
   "Clip saved: {name}": "Klip disimpan: {name}",
   "The clip wasn't saved: {why}": "Klip tidak tersimpan: {why}",
   "That name can't be a file name: leave out symbols like / : * ? < > |.": "Nama itu tidak bisa dipakai sebagai nama berkas: hindari simbol seperti / : * ? < > |.",
-  "A clip with that name already exists.": "Klip dengan nama itu sudah ada."
+  "A clip with that name already exists.": "Klip dengan nama itu sudah ada.",
+  "This game only lets players into that place through its start place, so the account starts there.": "Game ini hanya mengizinkan pemain masuk ke tempat itu lewat place awalnya, jadi akun mulai dari sana."
 }

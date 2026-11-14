@@ -415,5 +415,6 @@
   "Clip saved: {name}": "Đã lưu clip: {name}",
   "The clip wasn't saved: {why}": "Không lưu được clip: {why}",
   "That name can't be a file name: leave out symbols like / : * ? < > |.": "Tên đó không dùng làm tên tệp được: hãy bỏ các ký hiệu như / : * ? < > |.",
-  "A clip with that name already exists.": "Đã có clip mang tên đó."
+  "A clip with that name already exists.": "Đã có clip mang tên đó.",
+  "This game only lets players into that place through its start place, so the account starts there.": "Game này chỉ cho người chơi vào nơi đó qua place khởi đầu, nên tài khoản sẽ bắt đầu ở đó."
 }

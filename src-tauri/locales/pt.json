@@ -426,5 +426,6 @@
   "Clip saved: {name}": "Clipe salvo: {name}",
   "The clip wasn't saved: {why}": "O clipe não foi salvo: {why}",
   "That name can't be a file name: leave out symbols like / : * ? < > |.": "Esse nome não pode ser nome de arquivo: evite símbolos como / : * ? < > |.",
-  "A clip with that name already exists.": "Já existe um clipe com esse nome."
+  "A clip with that name already exists.": "Já existe um clipe com esse nome.",
+  "This game only lets players into that place through its start place, so the account starts there.": "Este jogo só deixa os jogadores entrarem nesse lugar pelo place inicial, então a conta começa lá."
 }

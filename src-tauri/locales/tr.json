@@ -426,5 +426,6 @@
   "Clip saved: {name}": "Klip kaydedildi: {name}",
   "The clip wasn't saved: {why}": "Klip kaydedilmedi: {why}",
   "That name can't be a file name: leave out symbols like / : * ? < > |.": "Bu ad dosya adı olamaz: / : * ? < > | gibi simgeleri kullanmayın.",
-  "A clip with that name already exists.": "Bu adda bir klip zaten var."
+  "A clip with that name already exists.": "Bu adda bir klip zaten var.",
+  "This game only lets players into that place through its start place, so the account starts there.": "Bu oyun o yere yalnızca başlangıç yerinden girmeye izin veriyor, bu yüzden hesap oradan başlıyor."
 }
