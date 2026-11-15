@@ -2,6 +2,16 @@
 
 Native Apple Silicon Tauri/WKWebView build retaining the real account manager, Roblox APIs, SQLCipher database, encrypted backups, master passwords and recovery codes.
 
+## Current integration: 1.2.301 (November 14, 2026)
+
+Based on upstream Windows tag **v1.2.301**, commit `5923226`, merged into the existing Mac 0.9.0 backend. The full [feature audit](MACOS_FEATURE_AUDIT.md) is the current source of truth, including individual commands and settings. Sections with older version numbers below are historical validation records, not results of this release.
+
+New shared functionality includes the upstream interface/themes, settings search/goals, account/group profiles, social and player tools, custom flags, launch/history fixes, richer Discord settings, news and online counts. Native adapters now support the current scheduler's account profiles, Fit/Tiny geometry, minimized preview state and isolated login form filling. Preview work remains bounded to 10 requests/second in aggregate on Mac.
+
+Replay capture, signed-bundle mod application, protected embedded browsing, default-launcher handoff and the Windows watchdog are explicitly unavailable. Shared clip/mod libraries work independently of capture/application. Mac account browser windows remain ephemeral; closing/locking closes those sessions. No Windows memory trimming, affinity, hard quotas, bandwidth shaping or per-client GPU/audio is claimed.
+
+Validation for this integration: `npm run build`; sounds/news/liquid/look checks; `cargo test --manifest-path src-tauri/Cargo.toml --locked` (517 passed, 0 failed, 5 ignored); packaged arm64 app. Automated tests use fixture/temporary data, not your real accounts. New database migrations require an encrypted backup before upgrading; downgrade cannot read the new schema. New-build permissions, actual Roblox joins, anti-AFK endurance, profiles, updater handoff, social API operations and Discord/tray interactions require live acceptance testing.
+
 ## Implemented Mac features
 
 - **Multiple Roblox processes:** launch the installed, unchanged RobloxPlayer executable directly with `-protocolString`. Before a multi-instance launch, unlink its named `/RobloxPlayerUniq` semaphore. Existing clients retain their handles and remain running. Launches are serialized; each returned PID and Unix creation time identifies the new client. No executable patches, injections, task ports or anti-cheat changes.

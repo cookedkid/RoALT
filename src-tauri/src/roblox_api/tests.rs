@@ -832,6 +832,53 @@ async fn direct_targets_need_no_call_and_long_launch_data_is_dropped() {
 }
 
 #[tokio::test]
+async fn join_refused_reads_status_12() {
+    let refused = r#"{"jobId":null,"status":12,"message":"You don't have permission to join this game."}"#;
+    let (base, reqs) = serve(vec![csrf_403(), ok(refused), ok(r#"{"status":2,"jobId":"x"}"#)]);
+    let (c, _) = client(&base);
+    let cookie = Secret::new("OLD");
+    assert!(c.join_refused(4, &cookie, 3541987450).await.unwrap());
+    assert!(!c.join_refused(4, &cookie, 3541987450).await.unwrap());
+
+    reqs.recv().unwrap();
+    let req = reqs.recv().unwrap();
+    assert_eq!(first_line(&req), "POST /v1/join-game HTTP/1.1");
+    assert!(has(&req, "\r\nx-csrf-token: TOK\r\n") && has(&req, "\r\ncookie: .ROBLOSECURITY=OLD\r\n"));
+    assert!(has(&req, "\r\norigin: https://www.roblox.com\r\n"));
+    let body = body_of(&req);
+    assert_eq!((&body["placeId"], &body["isTeleport"]), (&serde_json::json!(3541987450_i64), &serde_json::json!(false)));
+    assert!(body["gameJoinAttemptId"].as_str().is_some_and(crate::launcher::target::is_uuid));
+}
+
+#[tokio::test]
+async fn refused_sub_places_go_through_the_start_place_once_learnt() {
+    use crate::launcher::through_start_place;
+    let universe = |id| ok(&format!(r#"{{"universeId":{id}}}"#));
+    let root = |u, p| ok(&format!(r#"{{"data":[{{"id":{u},"rootPlaceId":{p},"name":"G"}}]}}"#));
+    let refused = ok(r#"{"status":12}"#);
+    let (base, reqs) = serve(vec![universe(901), root(901, 9010), refused, universe(902), root(902, 9020), ok(r#"{"status":2}"#), universe(903), root(903, 9030)]);
+    let (c, _) = client(&base);
+    let cookie = Secret::new("OLD");
+    let job = |place_id| Join::Job { place_id, job_id: JOB.into() };
+
+    // A refused sub-place: its server join becomes the game at its start place, with a note.
+    let (join, note) = through_start_place(&c, 4, &cookie, job(9011), Some("Expired.".into())).await;
+    assert_eq!(join, Join::Game { place_id: 9010, launch_data: None });
+    assert!(note.unwrap().starts_with("Expired. This game only lets players"));
+    // Learnt: the next launch there asks nothing (a call would hit the next canned answer).
+    let game = Join::Game { place_id: 9011, launch_data: Some("d".into()) };
+    assert_eq!(through_start_place(&c, 4, &cookie, game, None).await.0, Join::Game { place_id: 9010, launch_data: Some("d".into()) });
+    // A sub-place that takes direct joins, and a start place (never asked about), stay as they are.
+    assert_eq!(through_start_place(&c, 4, &cookie, job(9021), None).await, (job(9021), None));
+    assert_eq!(through_start_place(&c, 4, &cookie, job(9030), None).await, (job(9030), None));
+    assert_eq!(reqs.try_iter().count(), 8);
+    // Nothing to ask without a place, and a failed lookup launches as asked.
+    let follow = Join::Follow { user_id: 1 };
+    assert_eq!(through_start_place(&c, 4, &cookie, follow.clone(), None).await, (follow, None));
+    assert_eq!(through_start_place(&c, 4, &cookie, job(9041), None).await, (job(9041), None));
+}
+
+#[tokio::test]
 async fn users_by_name_excludes_banned_and_sends_no_cookie() {
     let found = String::from_utf8(fixture_body("authlaunch-csrf-users-v1-usernames-nocsrf.json")).unwrap();
     let (base, reqs) = serve(vec![ok(&found)]);
@@ -844,6 +891,43 @@ async fn users_by_name_excludes_banned_and_sends_no_cookie() {
     assert_eq!(body_of(&req), serde_json::json!({ "usernames": ["Roblox"], "excludeBannedUsers": true }));
     assert!(!has(&req, "\r\ncookie:"));
     assert!(c.users_by_name(&[]).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn friend_statuses_read_ints_and_strings() {
+    let body = r#"{"data":[{"id":2,"status":1},{"id":3,"status":"RequestSent"},{"id":4,"status":3},{"id":5,"status":"Weird"},{"id":6}]}"#;
+    let (base, reqs) = serve(vec![ok(body)]);
+    let (c, _) = client(&base);
+    let s = c.friend_statuses(4, &Secret::new("OLD"), 1, &[6, 5, 4, 3, 2, 2, 0]).await.unwrap();
+    assert_eq!(s[&2], FriendStatus::Friends);
+    assert_eq!(s[&3], FriendStatus::RequestSent);
+    assert_eq!(s[&4], FriendStatus::RequestReceived);
+    assert_eq!((s[&5], s[&6]), (FriendStatus::NotFriends, FriendStatus::NotFriends));
+    let req = reqs.recv().unwrap();
+    assert_eq!(first_line(&req), "GET /v1/users/1/friends/statuses?userIds=2,3,4,5,6 HTTP/1.1");
+    assert!(has(&req, "\r\ncookie: .ROBLOSECURITY=OLD\r\n"));
+}
+
+#[tokio::test]
+async fn friend_request_and_accept_send_csrf() {
+    let (base, reqs) = serve(vec![csrf_403(), ok("{}"), ok("{}")]);
+    let (c, _) = client(&base);
+    let cookie = Secret::new("OLD");
+    c.request_friendship(4, &cookie, 156).await.unwrap();
+    c.accept_friend(4, &cookie, 261).await.unwrap();
+    let (_, retried, accept) = (reqs.recv().unwrap(), reqs.recv().unwrap(), reqs.recv().unwrap());
+    assert_eq!(first_line(&retried), "POST /v1/users/156/request-friendship HTTP/1.1");
+    assert!(has(&retried, "\r\nx-csrf-token: TOK\r\n"));
+    assert_eq!(first_line(&accept), "POST /v1/users/261/accept-friend-request HTTP/1.1");
+    assert!(has(&accept, "\r\nx-csrf-token: TOK\r\n") && has(&accept, "\r\ncookie: .ROBLOSECURITY=OLD\r\n"));
+}
+
+#[tokio::test]
+async fn friend_request_captcha_is_a_challenge() {
+    let captcha = reply("403 Forbidden", &["rblx-challenge-id: abc", "rblx-challenge-type: captcha", "x-csrf-token: TOK"], "{}");
+    let (base, _reqs) = serve(vec![captcha]);
+    let (c, _) = client(&base);
+    assert!(matches!(c.request_friendship(4, &Secret::new("OLD"), 156).await, Err(AppError::Challenge)));
 }
 
 #[tokio::test]
@@ -1050,6 +1134,14 @@ async fn games_read_the_browser_fields_leniently() {
         visits: 65079604670,
         max_players: 12,
         private_servers: false,
+        favourites: 20119446,
+        created: Some("2019-01-16T03:29:19.433Z".into()),
+        updated: Some("2026-10-22T17:28:11.337Z".into()),
+        genre: Some("RPG".into()),
+        subgenre: Some("Action RPG".into()),
+        group_id: Some(4372130),
+        avatar_type: Some("MorphToR15".into()),
+        copying: Some(false),
     };
     assert_eq!(games[0], blox);
     assert_eq!((games[1].root_place_id, games[1].creator.as_str(), games[1].max_players), (920587237, "Uplift Games", 35));
@@ -1151,6 +1243,308 @@ async fn private_servers_without_a_valid_cookie_is_cookie_invalid() {
     assert!(matches!(r, Err(AppError::CookieInvalid)));
 }
 
+#[tokio::test]
+async fn vip_server_reads_leniently_and_never_keeps_secrets() {
+    use crate::model::{AllowedUser, PrivateServerSettings};
+    let body = format!(
+        r#"{{"id":9,"name":"Mine","game":{{"id":7,"name":"G","rootPlace":{{"id":70}}}},"joinCode":"{ACCESS}","active":true,
+        "link":"https://www.roblox.com/share?code={ACCESS}","accessCode":"{ACCESS}",
+        "subscription":{{"active":false,"expired":false,"expirationDate":"2026-12-01T00:00:00Z","price":100,"canRenew":true}},
+        "permissions":{{"clanAllowed":false,"friendsAllowed":true,"users":[{{"id":3,"name":"alt","displayName":"Alt"}},{{"name":"no id"}}]}}}}"#
+    );
+    let (base, reqs) = serve(vec![ok(&body), ok("{}")]);
+    let (c, _) = client(&base);
+    let cookie = Secret::new("OLD");
+
+    let s = c.vip_server(4, &cookie, 9).await.unwrap();
+    let want = PrivateServerSettings {
+        vip_server_id: 9,
+        name: "Mine".into(),
+        active: true,
+        friends_allowed: true,
+        allowed_users: vec![AllowedUser { user_id: 3, username: "alt".into(), display_name: "Alt".into() }],
+        renews: false,
+        expired: false,
+        expires: Some("2026-12-01T00:00:00Z".into()),
+        price: Some(100),
+    };
+    assert_eq!(s, want);
+    assert!(!serde_json::to_string(&s).unwrap().contains(ACCESS));
+    let req = reqs.recv().unwrap();
+    assert_eq!(first_line(&req), "GET /v1/vip-servers/9 HTTP/1.1");
+    assert!(has(&req, "\r\ncookie: .ROBLOSECURITY=OLD\r\n"));
+
+    // Nothing but the id known: everything off / empty.
+    let bare = c.vip_server(4, &cookie, 9).await.unwrap();
+    assert_eq!(bare, PrivateServerSettings { name: "".into(), active: false, friends_allowed: false, allowed_users: vec![], expires: None, price: None, ..want });
+}
+
+#[tokio::test]
+async fn vip_server_update_sends_only_the_set_parts_after_a_csrf_retry() {
+    use crate::model::PrivateServerPatch;
+    let (base, reqs) = serve(vec![csrf_403(), ok("{}"), ok("{}"), ok("{}")]);
+    let (c, _) = client(&base);
+    let cookie = Secret::new("OLD");
+
+    let patch = PrivateServerPatch {
+        name: Some("  New name ".into()),
+        new_join_code: Some(true),
+        users_to_add: Some(vec![3, 0, 3]),
+        users_to_remove: Some(vec![]),
+        ..Default::default()
+    };
+    c.vip_server_update(4, &cookie, 9, &patch).await.unwrap();
+    let (first, retried, permissions) = (reqs.recv().unwrap(), reqs.recv().unwrap(), reqs.recv().unwrap());
+    assert!(!has(&first, "x-csrf-token"));
+    assert_eq!(first_line(&retried), "PATCH /v1/vip-servers/9 HTTP/1.1");
+    assert!(has(&retried, "\r\nx-csrf-token: TOK\r\n"));
+    assert_eq!(body_of(&retried), serde_json::json!({ "name": "New name", "newJoinCode": true }));
+    assert_eq!(first_line(&permissions), "PATCH /v1/vip-servers/9/permissions HTTP/1.1");
+    assert_eq!(body_of(&permissions), serde_json::json!({ "usersToAdd": [3] }));
+
+    // Only the server part set: no permissions call. `newJoinCode: false` is no change.
+    let patch = PrivateServerPatch { active: Some(false), new_join_code: Some(false), ..Default::default() };
+    c.vip_server_update(4, &cookie, 9, &patch).await.unwrap();
+    let req = reqs.recv().unwrap();
+    assert_eq!((first_line(&req), body_of(&req)), ("PATCH /v1/vip-servers/9 HTTP/1.1", serde_json::json!({ "active": false })));
+}
+
+#[tokio::test]
+async fn vip_server_update_without_changes_or_with_a_blank_name_makes_no_call() {
+    use crate::model::PrivateServerPatch;
+    // No canned answer: any call fails as Network.
+    let (base, _reqs) = serve(vec![]);
+    let (c, _) = client(&base);
+    let cookie = Secret::new("OLD");
+    let empty = PrivateServerPatch { users_to_add: Some(vec![0]), new_join_code: Some(false), ..Default::default() };
+    c.vip_server_update(4, &cookie, 9, &empty).await.unwrap();
+    let blank = PrivateServerPatch { name: Some(" \t ".into()), friends_allowed: Some(true), ..Default::default() };
+    assert!(matches!(c.vip_server_update(4, &cookie, 9, &blank).await, Err(AppError::Invalid(_))));
+    assert!(matches!(c.vip_server_buy(4, &cookie, 7, "  ", 100, ACCESS).await, Err(AppError::Invalid(_))));
+    assert!(matches!(c.vip_server_buy(4, &cookie, 7, "Mine", 100, "").await, Err(AppError::Internal(_))));
+}
+
+#[tokio::test]
+async fn vip_server_subscription_and_buy_bodies() {
+    let (base, reqs) = serve(vec![ok("{}"), ok("{}"), ok(&format!(r#"{{"id":9,"joinCode":"{ACCESS}"}}"#))]);
+    let (c, _) = client(&base);
+    let cookie = Secret::new("OLD");
+
+    c.vip_server_subscription(4, &cookie, 9, true, 100).await.unwrap();
+    c.vip_server_subscription(4, &cookie, 9, false, 100).await.unwrap();
+    for active in [true, false] {
+        let req = reqs.recv().unwrap();
+        assert_eq!(first_line(&req), "PATCH /v1/vip-servers/9/subscription HTTP/1.1");
+        assert_eq!(body_of(&req), serde_json::json!({ "active": active, "price": 100 }));
+    }
+
+    c.vip_server_buy(4, &cookie, 7, " Mine ", 100, ACCESS).await.unwrap();
+    let req = reqs.recv().unwrap();
+    assert_eq!(first_line(&req), "POST /v1/games/vip-servers/7 HTTP/1.1");
+    assert!(has(&req, "\r\ncookie: .ROBLOSECURITY=OLD\r\n"));
+    let want = serde_json::json!({ "name": "Mine", "expectedPrice": 100, "isPurchaseConfirmed": true, "idempotencyKey": ACCESS });
+    assert_eq!(body_of(&req), want);
+}
+
+#[tokio::test]
+async fn vip_server_refusals_map_to_cookie_invalid_and_forbidden() {
+    let not_owner = || reply("403 Forbidden", &[], r#"{"errors":[{"code":0,"message":"Authorization has been denied for this request."}]}"#);
+    let (base, _reqs) = serve(vec![reply("401 Unauthorized", &[], &fixture("private-servers-unauth.json")), not_owner(), not_owner()]);
+    let (c, _) = client(&base);
+    let cookie = Secret::new("OLD");
+    assert!(matches!(c.vip_server(4, &cookie, 9).await, Err(AppError::CookieInvalid)));
+    // A 403 without a CSRF token, even with Roblox's text: not the owner (the command words it so).
+    assert!(c.vip_server_subscription(4, &cookie, 9, false, 100).await.unwrap_err().is_forbidden());
+    assert!(c.vip_server(4, &cookie, 9).await.unwrap_err().is_forbidden());
+}
+
+#[tokio::test]
+async fn vip_server_refusals_quote_robloxs_own_text() {
+    let (base, _reqs) = serve(vec![
+        reply("400 Bad Request", &[], r#"{"errors":[{"code":12,"message":"The price\n is wrong."}]}"#),
+        reply("400 Bad Request", &[], "{}"),
+        reply("403 Forbidden", &[], r#"{"errors":[{"code":2,"message":"Not friends."}]}"#),
+        reply("500 Internal Server Error", &[], r#"{"errors":[{"message":"Oops"}]}"#),
+    ]);
+    let (c, _) = client(&base);
+    let cookie = Secret::new("OLD");
+    let text = |r: crate::error::Result<()>| match r {
+        Err(AppError::Invalid(m)) => m,
+        other => panic!("{:?}", other.err()),
+    };
+    assert!(text(c.vip_server_buy(4, &cookie, 7, "Mine", 99, ACCESS).await).ends_with("The price is wrong."));
+    // No text: the purchase still reads as refused, not as "HTTP 400".
+    assert!(text(c.vip_server_buy(4, &cookie, 7, "Mine", 99, ACCESS).await).contains("charged nothing"));
+    let patch = crate::model::PrivateServerPatch { users_to_add: Some(vec![5]), ..Default::default() };
+    assert!(text(c.vip_server_update(4, &cookie, 9, &patch).await).ends_with("Not friends."));
+    // A 5xx may have gone through: it stays a Roblox error for the UI to treat as unsure.
+    assert!(matches!(c.vip_server_buy(4, &cookie, 7, "Mine", 100, ACCESS).await, Err(AppError::Roblox(_))));
+}
+
+#[tokio::test]
+async fn outfits_follow_the_page_token_and_drop_repeats() {
+    let (base, reqs) = serve(vec![
+        ok(r#"{"data":[{"id":5,"name":"A","isEditable":true},{"name":"no id"}],"paginationToken":"abc"}"#),
+        ok(r#"{"data":[{"id":5,"name":"A"},{"id":6,"name":null}],"paginationToken":""}"#),
+    ]);
+    let (c, _) = client(&base);
+    let list = c.outfits(4, &Secret::new("OLD"), 77).await.unwrap();
+    assert_eq!(list, [(5, "A".to_owned()), (6, String::new())]);
+    let (first, second) = (reqs.recv().unwrap(), reqs.recv().unwrap());
+    assert_eq!(first_line(&first), "GET /v2/avatar/users/77/outfits?isEditable=true&itemsPerPage=50 HTTP/1.1");
+    assert!(has(&first, "\r\ncookie: .ROBLOSECURITY=OLD\r\n"));
+    assert!(first_line(&second).ends_with("&itemsPerPage=50&paginationToken=abc HTTP/1.1"));
+}
+
+#[tokio::test]
+async fn wear_sends_the_look_in_order_and_again_without_refused_items() {
+    let outfit = r#"{"id":9,"name":"Fit","assets":[
+        {"id":1,"name":"Hat","assetType":{"id":8,"name":"Hat"},"currentVersionId":3},
+        {"id":2,"name":"Jacket","meta":{"order":7,"version":1}},
+        {"name":"no id"}
+    ],"bodyColor3s":{"headColor3":"FFFFFF"},"scale":{"height":1.05},"playerAvatarType":"R15"}"#;
+    let (base, reqs) = serve(vec![
+        ok(outfit),
+        csrf_403(),
+        ok("{}"),
+        ok("{}"),
+        ok("{}"),
+        ok(r#"{"invalidAssets":[{"id":2}],"invalidAssetIds":[2],"success":false}"#),
+        ok(r#"{"invalidAssetIds":[],"success":true}"#),
+        ok("{}"),
+        ok("{}"),
+        ok("{}"),
+        ok(r#"{"invalidAssetIds":[2],"success":false}"#),
+        ok(r#"{"invalidAssetIds":[1],"success":false}"#),
+    ]);
+    let (c, _) = client(&base);
+    let cookie = Secret::new("OLD");
+
+    let look = c.outfit_look(4, &cookie, 9).await.unwrap();
+    assert_eq!(first_line(&reqs.recv().unwrap()), "GET /v3/outfits/9/details HTTP/1.1");
+    assert_eq!(c.wear(5, &cookie, &look).await.unwrap(), ["Jacket"]);
+
+    let sent: Vec<String> = reqs.try_iter().skip(1).collect();
+    use serde_json::json;
+    let jacket = json!({ "id": 2, "meta": { "order": 7, "version": 1 } });
+    let want = [
+        ("POST /v1/avatar/set-player-avatar-type HTTP/1.1", json!({ "playerAvatarType": "R15" })),
+        ("POST /v2/avatar/set-body-colors HTTP/1.1", json!({ "headColor3": "FFFFFF" })),
+        ("POST /v1/avatar/set-scales HTTP/1.1", json!({ "height": 1.05 })),
+        ("POST /v2/avatar/set-wearing-assets HTTP/1.1", json!({ "assets": [{ "id": 1 }, jacket] })),
+        ("POST /v2/avatar/set-wearing-assets HTTP/1.1", json!({ "assets": [{ "id": 1 }] })),
+    ];
+    assert_eq!(sent.len(), want.len());
+    for (req, (line, body)) in sent.iter().zip(want) {
+        assert_eq!((first_line(req), body_of(req)), (line, body));
+        assert!(has(req, "\r\nx-csrf-token: TOK\r\n"));
+    }
+
+    // Refused again without the named item: an error, not "worn without the jacket".
+    assert!(matches!(c.wear(5, &cookie, &look).await, Err(AppError::Roblox(_))));
+}
+
+#[tokio::test]
+async fn the_worn_look_saves_as_an_outfit() {
+    // The avatar worn now calls its scales `scales`; an outfit takes `scale`.
+    let worn = r#"{"scales":{"height":1},"playerAvatarType":"R6","bodyColor3s":{"headColor3":"000000"},"assets":[{"id":3,"name":"Hat"}],"emotes":[]}"#;
+    let (base, reqs) = serve(vec![ok(worn), ok("{}"), ok(r#"{"success":true}"#), ok(r#"{"success":false}"#)]);
+    let (c, _) = client(&base);
+    let cookie = Secret::new("OLD");
+
+    let look = c.worn_look(4, &cookie).await.unwrap();
+    c.outfit_create(4, &cookie, "  Mine ", &look).await.unwrap();
+    let (read, create) = (reqs.recv().unwrap(), reqs.recv().unwrap());
+    assert_eq!(first_line(&read), "GET /v2/avatar/avatar HTTP/1.1");
+    assert_eq!(first_line(&create), "POST /v3/outfits/create HTTP/1.1");
+    let want = serde_json::json!({
+        "name": "Mine",
+        "bodyColor3s": { "headColor3": "000000" },
+        "assets": [{ "id": 3 }],
+        "scale": { "height": 1 },
+        "playerAvatarType": "R6",
+    });
+    assert_eq!(body_of(&create), want);
+
+    // A look without parts sends only its (empty) item list; "not worn" with no item named is an error.
+    assert!(c.wear(4, &cookie, &Look::default()).await.unwrap().is_empty());
+    let req = reqs.recv().unwrap();
+    assert_eq!((first_line(&req), body_of(&req)), ("POST /v2/avatar/set-wearing-assets HTTP/1.1", serde_json::json!({ "assets": [] })));
+    assert!(matches!(c.wear(4, &cookie, &Look::default()).await, Err(AppError::Roblox(_))));
+}
+
+#[tokio::test]
+async fn outfit_refusals_quote_robloxs_text_and_a_challenge_does_not() {
+    let (base, reqs) = serve(vec![
+        reply("400 Bad Request", &[], r#"{"errors":[{"code":4,"message":"Invalid outfit name."}]}"#),
+        reply("403 Forbidden", &["rblx-challenge-id: abc"], r#"{"errors":[{"code":0,"message":"Challenge is required"}]}"#),
+        ok(r#"{"success":true}"#),
+    ]);
+    let (c, _) = client(&base);
+    let cookie = Secret::new("OLD");
+    match c.outfit_rename(4, &cookie, 9, "x").await {
+        Err(AppError::Invalid(m)) => assert!(m.ends_with("Invalid outfit name."), "{m}"),
+        other => panic!("{:?}", other.err()),
+    }
+    assert!(matches!(c.outfit_create(4, &cookie, "x", &Look::default()).await, Err(AppError::Challenge)));
+    c.outfit_delete(4, &cookie, 9).await.unwrap();
+    let (rename, _, delete) = (reqs.recv().unwrap(), reqs.recv().unwrap(), reqs.recv().unwrap());
+    assert_eq!((first_line(&rename), body_of(&rename)), ("PATCH /v3/outfits/9 HTTP/1.1", serde_json::json!({ "name": "x" })));
+    assert_eq!(first_line(&delete), "POST /v1/outfits/9/delete HTTP/1.1");
+}
+
+#[tokio::test]
+async fn trades_read_one_page_and_a_refused_answer_is_quoted() {
+    use crate::model::{TradeKind, TradeRow};
+    let list = r#"{"previousPageCursor":null,"nextPageCursor":"next","data":[
+        {"id":9007199254740993,"user":{"id":21,"name":"trader","displayName":"Trader"},"created":"2026-11-08T10:00:00.000Z","expiration":"2026-11-12T10:00:00.000Z","isActive":true,"status":"Open"},
+        {"user":{"id":22,"name":"no id"}}
+    ]}"#;
+    let detail = r#"{"offers":[
+        {"user":{"id":21,"name":"trader"},"userAssets":[{"id":1,"serialNumber":7,"assetId":100,"name":"Hat","recentAveragePrice":500}],"robux":0},
+        {"user":{"id":77},"userAssets":[],"robux":50}
+    ],"id":9,"status":"Open"}"#;
+    let (base, reqs) = serve(vec![
+        ok(list),
+        ok(detail),
+        csrf_403(),
+        ok("{}"),
+        reply("400 Bad Request", &[], r#"{"errors":[{"code":4,"message":"The trade request has expired."}]}"#),
+        reply("403 Forbidden", &["rblx-challenge-id: abc"], r#"{"errors":[{"code":0,"message":"Challenge is required"}]}"#),
+    ]);
+    let (c, _) = client(&base);
+    let cookie = Secret::new("OLD");
+
+    let rows = c.trades(4, &cookie, TradeKind::Inbound).await.unwrap();
+    let want = TradeRow {
+        id: "9007199254740993".into(),
+        partner_name: "trader".into(),
+        created: Some("2026-11-08T10:00:00.000Z".into()),
+        expires: Some("2026-11-12T10:00:00.000Z".into()),
+    };
+    assert_eq!(rows, [want]);
+    let offers = c.trade(4, &cookie, 9).await.unwrap().offers.unwrap();
+    let hat = &offers[0].user_assets.as_ref().unwrap()[0];
+    assert_eq!((offers.len(), hat.asset_id, hat.serial_number, hat.recent_average_price, offers[1].robux), (2, Some(100), Some(7), Some(500), Some(50)));
+
+    c.trade_answer(4, &cookie, 9, false).await.unwrap();
+    match c.trade_answer(4, &cookie, 9, true).await {
+        Err(AppError::Invalid(m)) => assert!(m.ends_with("The trade request has expired."), "{m}"),
+        other => panic!("{other:?}"),
+    }
+    assert!(matches!(c.trade_answer(4, &cookie, 9, true).await, Err(AppError::Challenge)));
+
+    let sent: Vec<String> = reqs.try_iter().collect();
+    assert_eq!(first_line(&sent[0]), "GET /v1/trades/Inbound?limit=100&sortOrder=Desc HTTP/1.1");
+    assert!(has(&sent[0], "\r\ncookie: .ROBLOSECURITY=OLD\r\n"));
+    assert_eq!(first_line(&sent[1]), "GET /v1/trades/9 HTTP/1.1");
+    // sent[2] is the decline Roblox answered with a CSRF token.
+    assert_eq!((first_line(&sent[3]), body_of(&sent[3])), ("POST /v1/trades/9/decline HTTP/1.1", serde_json::json!({})));
+    assert!(has(&sent[3], "\r\nx-csrf-token: TOK\r\n"));
+    assert_eq!(first_line(&sent[4]), "POST /v1/trades/9/accept HTTP/1.1");
+    assert_eq!(sent.len(), 6);
+}
+
 #[test]
 fn images_only_from_roblox_cdn() {
     assert!(super::is_rbxcdn("https://tr.rbxcdn.com/180DAY-abc/150/150/Image/Png/noFilter"));
@@ -1182,4 +1576,252 @@ fn a_huge_rate_limit_window_neither_panics_nor_stalls() {
     c.set_window("r", 0, u64::MAX);
     let rt = tokio::runtime::Builder::new_current_thread().enable_time().build().unwrap();
     assert!(matches!(rt.block_on(c.wait_turn("r")), Err(AppError::RateLimited(_))));
+}
+
+#[test]
+fn popular_keeps_game_lists_without_ads() {
+    // Trimmed from a live get-sorts answer (2026-11-08): a filters row, two game lists.
+    let page: types::ExploreSorts = serde_json::from_str(
+        r#"{"sorts":[
+            {"contentType":"Filters","sortId":"filters_v5","sortDisplayName":"","filters":[]},
+            {"contentType":"Games","sortId":"top-trending","sortDisplayName":"Top Trending","games":[
+                {"universeId":994732206,"rootPlaceId":2753915549,"name":"Blox Fruits","playerCount":338925,"totalUpVotes":10,"totalDownVotes":2,"isSponsored":false},
+                {"universeId":5,"rootPlaceId":6,"name":"An ad","playerCount":1,"isSponsored":true},
+                {"universeId":null,"rootPlaceId":7,"name":"No id"}
+            ]},
+            {"contentType":"Games","sortId":"empty","sortDisplayName":"Only ads","games":[{"universeId":8,"rootPlaceId":9,"isSponsored":true}]}
+        ],"nextSortsPageToken":"x"}"#,
+    )
+    .unwrap();
+    let sorts = popular_of(page);
+    assert_eq!(sorts.len(), 1, "filters and lists left empty go");
+    assert_eq!((sorts[0].id.as_str(), sorts[0].name.as_str()), ("top-trending", "Top Trending"));
+    assert_eq!(sorts[0].games.len(), 1, "no ads, no rows without ids");
+    let g = &sorts[0].games[0];
+    assert_eq!((g.universe_id, g.root_place_id, g.playing, g.up_votes, g.down_votes), (994732206, 2753915549, 338925, 10, 2));
+    assert_eq!(g.icon_url, None);
+}
+
+#[tokio::test]
+async fn game_votes_match_by_universe() {
+    let votes = r#"{"data":[{"id":9,"upVotes":1,"downVotes":2},{"id":383310974,"upVotes":9623620,"downVotes":1516142}]}"#;
+    let (base, reqs) = serve(vec![ok(votes), ok(r#"{"data":[]}"#)]);
+    let (c, _) = client(&base);
+    assert_eq!(c.game_votes(383310974).await.unwrap(), Some((9623620, 1516142)));
+    let req = reqs.recv().unwrap();
+    assert_eq!(first_line(&req), "GET /v1/games/votes?universeIds=383310974 HTTP/1.1");
+    assert!(!has(&req, "\r\ncookie:"));
+    assert_eq!(c.game_votes(383310974).await.unwrap(), None, "a universe Roblox doesn't list");
+}
+
+#[tokio::test]
+async fn game_passes_page_by_token_with_icons() {
+    let first = r#"{"gamePasses":[{"id":1,"name":"vip","displayName":"VIP","isForSale":true,"price":480},
+        {"id":2,"name":"Old","isForSale":false,"price":null},{"id":4,"name":"Priced off sale","isForSale":false,"price":50},
+        {"name":"no id","price":5}],"nextPageToken":"id_2z/+="}"#;
+    let second = r#"{"gamePasses":[{"id":3,"displayName":"Griffin","isForSale":true,"price":99}],"nextPageToken":""}"#;
+    let icons = r#"{"data":[{"targetId":3,"state":"Completed","imageUrl":"https://tr.rbxcdn.com/3"},
+        {"targetId":1,"state":"Completed","imageUrl":"https://tr.rbxcdn.com/1"}]}"#;
+    let (base, reqs) = serve(vec![ok(first), ok(second), ok(icons)]);
+    let (c, _) = client(&base);
+    let list = c.game_passes(383310974).await.unwrap();
+    let pass = |id, name: &str, price, icon: Option<&str>| crate::model::GamePass { id, name: name.into(), price, icon_url: icon.map(Into::into) };
+    assert_eq!(
+        list.items,
+        [pass(1, "VIP", Some(480), Some("https://tr.rbxcdn.com/1")), pass(2, "Old", None, None), pass(4, "Priced off sale", None, None), pass(3, "Griffin", Some(99), Some("https://tr.rbxcdn.com/3"))]
+    );
+    assert!(!list.more && list.complete);
+    let req = reqs.recv().unwrap();
+    assert_eq!(first_line(&req), "GET /game-passes/v1/universes/383310974/game-passes?passView=Full&pageSize=100 HTTP/1.1");
+    assert!(has(&req, "\r\norigin: https://www.roblox.com") && !has(&req, "\r\ncookie:"));
+    let req = reqs.recv().unwrap();
+    assert_eq!(first_line(&req), "GET /game-passes/v1/universes/383310974/game-passes?passView=Full&pageSize=100&pageToken=id_2z%2F%2B%3D HTTP/1.1");
+    assert_eq!(first_line(&reqs.recv().unwrap()), "GET /v1/game-passes?gamePassIds=1,2,3,4&size=150x150&format=Png HTTP/1.1");
+}
+
+#[tokio::test]
+async fn badges_stop_at_the_cap_and_keep_win_rate_as_fraction() {
+    let page = |n: u32| {
+        ok(&format!(
+            r#"{{"nextPageCursor":"c{n}","data":[{{"id":{n},"name":"b{n}","displayName":"Badge {n}","enabled":true,
+                "statistics":{{"pastDayAwardedCount":3,"awardedCount":1563733,"winRatePercentage":0.0015}}}},
+                {{"id":{},"name":"off","enabled":false}},{{"id":{},"name":"bare"}}]}}"#,
+            n + 100,
+            n + 200
+        ))
+    };
+    let mut responses: Vec<String> = (1..=5).map(page).collect();
+    responses.push(ok(r#"{"data":[]}"#));
+    let (base, reqs) = serve(responses);
+    let (c, _) = client(&base);
+    let list = c.game_badges(1).await.unwrap();
+    assert!(list.more && list.complete, "stopped at the cap: more, but nothing failed");
+    assert_eq!(list.items.len(), 10, "5 pages of an enabled badge and a bare one; disabled ones left out");
+    let b = &list.items[0];
+    assert_eq!((b.id, b.name.as_str(), b.awarded, b.awarded_yesterday, b.win_rate), (1, "Badge 1", 1563733, 3, 0.0015));
+    let bare = &list.items[1];
+    assert_eq!((bare.name.as_str(), bare.awarded, bare.win_rate), ("bare", 0, 0.0));
+    assert_eq!(first_line(&reqs.recv().unwrap()), "GET /v1/universes/1/badges?limit=100&sortOrder=Asc HTTP/1.1");
+    assert_eq!(first_line(&reqs.recv().unwrap()), "GET /v1/universes/1/badges?limit=100&sortOrder=Asc&cursor=c1 HTTP/1.1");
+}
+
+#[tokio::test]
+async fn a_later_page_failing_keeps_what_was_read() {
+    let first = r#"{"nextPageCursor":"next","data":[{"assetId":1029025,"name":"Fedora","recentAveragePrice":431023}]}"#;
+    let (base, _reqs) = serve(vec![ok(first), reply("500 Internal Server Error", &[], "{}"), reply("500 Internal Server Error", &[], "{}")]);
+    let (c, _) = client(&base);
+    let cookie = Secret::new("C");
+    let list = c.collectibles(3, &cookie, 156).await.unwrap();
+    assert_eq!(list.items.len(), 1);
+    assert!(list.more && !list.complete, "cut short: not complete");
+    assert!(c.collectibles(3, &cookie, 156).await.is_err(), "the first page failing is the error");
+}
+
+#[tokio::test]
+async fn collectibles_send_the_cookie_and_add_up_copies() {
+    let first = r#"{"nextPageCursor":"21748508_1_79","data":[
+        {"userAssetId":1,"assetId":1029025,"name":"The Classic ROBLOX Fedora","recentAveragePrice":431023},
+        {"userAssetId":2,"assetId":1365767,"name":"Valkyrie Helm","recentAveragePrice":null},
+        {"userAssetId":3,"name":"no asset id","recentAveragePrice":5}]}"#;
+    let second = r#"{"nextPageCursor":null,"data":[{"userAssetId":4,"assetId":1029025,"name":"The Classic ROBLOX Fedora","recentAveragePrice":431023}]}"#;
+    let (base, reqs) = serve(vec![ok(first), ok(second)]);
+    let (c, _) = client(&base);
+    let list = c.collectibles(3, &Secret::new("C"), 156).await.unwrap();
+    assert!(!list.more && list.complete);
+    assert_eq!(
+        list.items,
+        [
+            Holding { asset_id: 1029025, name: "The Classic ROBLOX Fedora".into(), copies: 2, rap: 431023 },
+            Holding { asset_id: 1365767, name: "Valkyrie Helm".into(), copies: 1, rap: 0 },
+        ]
+    );
+    let req = reqs.recv().unwrap();
+    assert_eq!(first_line(&req), "GET /v1/users/156/assets/collectibles?limit=100&sortOrder=Asc HTTP/1.1");
+    assert!(has(&req, "\r\ncookie: .ROBLOSECURITY=C"));
+    assert_eq!(first_line(&reqs.recv().unwrap()), "GET /v1/users/156/assets/collectibles?limit=100&sortOrder=Asc&cursor=21748508_1_79 HTTP/1.1");
+}
+
+#[tokio::test]
+async fn a_hidden_inventory_is_told_apart() {
+    let hidden = r#"{"errors":[{"code":11,"message":"You don't have permissions to view the specified user's inventory."}]}"#;
+    let (base, _reqs) = serve(vec![reply("403 Forbidden", &[], hidden), reply("500 Internal Server Error", &[], "{}"), reply("500 Internal Server Error", &[], "{}")]);
+    let (c, _) = client(&base);
+    let e = c.collectibles(3, &Secret::new("C"), 2).await.unwrap_err();
+    assert!(super::is_private_inventory(&e), "{e:?}");
+    let e = c.collectibles(3, &Secret::new("C"), 2).await.unwrap_err();
+    assert!(!super::is_private_inventory(&e), "a failure is not a hidden inventory: {e:?}");
+}
+
+#[tokio::test]
+async fn age_rating_posts_the_universe_and_keeps_what_it_contains() {
+    let body = r#"{"ageRecommendationDetails":{"summary":{"ageRecommendation":{"displayName":"Mild","minimumAge":9}},
+        "descriptorUsages":[{"descriptor":{"displayName":"Violence (Repeated/Mild)"},"contains":true},
+        {"descriptor":{"displayName":"Blood"},"contains":false},{"descriptor":null}]}}"#;
+    let (base, reqs) = serve(vec![ok(body), ok("{}")]);
+    let (c, _) = client(&base);
+    let r = c.age_rating(994732206).await.unwrap().unwrap();
+    assert_eq!((r.label.as_str(), r.minimum_age, r.descriptors), ("Mild", Some(9), vec!["Violence (Repeated/Mild)".to_string()]));
+    let req = reqs.recv().unwrap();
+    assert!(first_line(&req).starts_with("POST /experience-guidelines-api/experience-guidelines/get-age-recommendation"));
+    assert!(has(&req, "\r\norigin: https://www.roblox.com") && req.contains(r#"{"universeId":"994732206"}"#));
+    assert_eq!(c.age_rating(1).await.unwrap(), None, "no rating: none");
+}
+
+#[tokio::test]
+async fn a_players_groups_badges_and_games_read_leniently() {
+    let groups = r#"{"data":[{"group":{"id":9,"name":"Small","memberCount":10,"hasVerifiedBadge":false},"role":{"id":1,"name":"Member","rank":1}},
+        {"group":{"id":8,"name":"Big","memberCount":1000,"hasVerifiedBadge":true},"role":{"id":2,"name":"Owner","rank":255}},{"group":null}]}"#;
+    let badges = r#"[{"id":1,"name":"Veteran","description":"old","imageUrl":"https://images.rbxcdn.com/v.png"},{"id":2,"name":"Odd","imageUrl":"https://evil.example/x.png"},{"name":"no id"}]"#;
+    let games = r#"{"nextPageCursor":null,"data":[{"id":5,"name":"Obby","rootPlace":{"id":50},"placeVisits":24854},{"id":6,"name":"no place"}]}"#;
+    let (base, reqs) = serve(vec![ok(groups), ok(badges), ok(games)]);
+    let (c, _) = client(&base);
+    let g = c.user_groups(156).await.unwrap();
+    assert_eq!(g.iter().map(|g| (g.name.as_str(), g.role.as_str(), g.members)).collect::<Vec<_>>(), [("Big", "Owner", 1000), ("Small", "Member", 10)]);
+    assert_eq!(first_line(&reqs.recv().unwrap()), "GET /v2/users/156/groups/roles HTTP/1.1");
+    let b = c.roblox_badges(156).await.unwrap();
+    assert_eq!(b.iter().map(|b| (b.id, b.image_url.is_some())).collect::<Vec<_>>(), [(1, true), (2, false)], "icons only from Roblox's CDN");
+    let list = c.user_games(156).await.unwrap();
+    assert!(list.complete && !list.more);
+    assert_eq!(list.items, [crate::model::PlayerGame { universe_id: 5, place_id: 50, name: "Obby".into(), visits: 24854 }]);
+}
+#[tokio::test]
+async fn an_icon_still_being_made_leaves_the_answer_incomplete() {
+    let pending = r#"{"data":[{"targetId":1,"state":"Completed","imageUrl":"https://tr.rbxcdn.com/1"},{"targetId":2,"state":"Pending","imageUrl":""}]}"#;
+    let (base, _reqs) = serve(vec![ok(pending), ok(r#"{"data":[{"targetId":1,"state":"Completed","imageUrl":"https://tr.rbxcdn.com/1"}]}"#)]);
+    let (c, _) = client(&base);
+    let (icons, complete) = c.game_icons(&[1, 2]).await;
+    assert_eq!((icons.len(), complete), (1, false), "asked again next time, not kept");
+    assert_eq!(c.game_icons(&[1]).await, (HashMap::from([(1, "https://tr.rbxcdn.com/1".to_string())]), true));
+}
+
+#[tokio::test]
+async fn friend_requests_robux_history_and_owned_servers_are_read_leniently() {
+    use crate::model::{FriendRequest, OwnedPrivateServer, RobuxKind, RobuxTotals, RobuxTransaction};
+    let requests = r#"{"previousPageCursor":null,"nextPageCursor":null,"data":[
+        {"friendRequest":{"sentAt":"2026-11-10T10:00:00.000Z","senderId":21,"sourceUniverseId":null,"originSourceType":"UserProfile"},"mutualFriendsList":["a","b"],"id":21,"name":"","displayName":""},
+        {"friendRequest":{"senderId":22},"id":null,"name":"named","displayName":"Named"},
+        {"friendRequest":null,"name":"no sender"}
+    ]}"#;
+    let names = r#"{"data":[{"hasVerifiedBadge":false,"id":21,"name":"asker","displayName":"Asker"}]}"#;
+    let buys = r#"{"previousPageCursor":null,"nextPageCursor":"n","data":[
+        {"id":1,"idHash":"h","created":"2026-11-09T08:00:00.000Z","isPending":false,"agent":{"id":5,"type":"User","name":"seller"},"details":{"id":7,"name":"Hat","type":"Asset"},"currency":{"amount":-50,"type":"Robux"},"purchaseToken":null},
+        {"created":null,"agent":null,"details":{"place":{"placeId":3,"universeId":4,"name":"Some Game"}},"currency":{"amount":12.0}},
+        {}
+    ]}"#;
+    let totals = r#"{"salesTotal":0,"purchasesTotal":-50,"incomingRobuxTotal":12,"outgoingRobuxTotal":-50,"pendingRobuxTotal":3}"#;
+    let page1 = r#"{"nextPageCursor":"c 2","data":[
+        {"active":true,"universeId":4,"placeId":3,"name":"mine","ownerId":1,"ownerName":"me","priceInRobux":100,"privateServerId":900,"expirationDate":"2026-11-20T00:00:00Z","willRenew":false,"universeName":"Some Game"},
+        {"name":"no id"}
+    ]}"#;
+    let page2 = r#"{"nextPageCursor":null,"data":[{"privateServerId":901}]}"#;
+    let (base, reqs) = serve(vec![ok(requests), ok(names), csrf_403(), ok("{}"), ok("{}"), ok(buys), ok(totals), ok(page1), ok(page2)]);
+    let (c, _) = client(&base);
+    let cookie = Secret::new("OLD");
+
+    let rows = c.friend_requests(4, &cookie).await.unwrap();
+    let row = |user_id, name: &str, display: &str, sent_at: Option<&str>, mutual| FriendRequest {
+        user_id,
+        name: name.into(),
+        display_name: display.into(),
+        avatar_url: None,
+        sent_at: sent_at.map(Into::into),
+        mutual,
+    };
+    assert_eq!(rows, [row(21, "asker", "Asker", Some("2026-11-10T10:00:00.000Z"), 2), row(22, "named", "Named", None, 0)]);
+    c.decline_friend(4, &cookie, Some(21)).await.unwrap();
+    c.decline_friend(4, &cookie, None).await.unwrap();
+
+    let spent = c.transactions(4, &cookie, 77, RobuxKind::Purchase).await.unwrap();
+    let hat = RobuxTransaction { created: Some("2026-11-09T08:00:00.000Z".into()), amount: -50, what: "Hat".into(), who: "seller".into(), pending: false };
+    assert_eq!((spent.len(), &spent[0]), (3, &hat));
+    assert_eq!((spent[1].amount, spent[1].what.as_str(), spent[1].who.as_str()), (12, "Some Game", ""));
+    assert_eq!((spent[2].amount, spent[2].what.as_str(), spent[2].created.as_deref()), (0, "", None));
+    assert_eq!(c.transaction_totals(4, &cookie, 77).await.unwrap(), RobuxTotals { incoming: Some(12), outgoing: Some(-50), pending: Some(3) });
+
+    let owned = c.my_private_servers(4, &cookie).await.unwrap();
+    let mine = OwnedPrivateServer {
+        vip_server_id: 900,
+        name: "mine".into(),
+        place_id: Some(3),
+        universe_id: Some(4),
+        game: "Some Game".into(),
+        price: Some(100),
+        expires: Some("2026-11-20T00:00:00Z".into()),
+        will_renew: false,
+        active: true,
+    };
+    assert_eq!((owned.len(), &owned[0]), (2, &mine));
+    assert_eq!((owned[1].vip_server_id, owned[1].active, owned[1].expires.as_deref()), (901, false, None));
+
+    let sent: Vec<String> = reqs.try_iter().collect();
+    assert_eq!(first_line(&sent[0]), "GET /v1/my/friends/requests?limit=100&sortOrder=Desc HTTP/1.1");
+    assert_eq!((first_line(&sent[1]), body_of(&sent[1])), ("POST /v1/users HTTP/1.1", serde_json::json!({"userIds":[21],"excludeBannedUsers":false})));
+    assert!(!has(&sent[1], "ROBLOSECURITY"), "names are asked without the cookie");
+    // sent[2] is the decline Roblox answered with a CSRF token.
+    assert_eq!(first_line(&sent[3]), "POST /v1/users/21/decline-friend-request HTTP/1.1");
+    assert_eq!(first_line(&sent[4]), "POST /v1/user/friend-requests/decline-all HTTP/1.1");
+    assert_eq!(first_line(&sent[5]), "GET /transaction-records/v1/users/77/transactions?limit=25&itemPricingType=All&transactionType=Purchase HTTP/1.1");
+    assert_eq!(first_line(&sent[6]), "GET /transaction-records/v1/users/77/transaction-totals?timeFrame=Month&transactionType=summary HTTP/1.1");
+    assert_eq!(first_line(&sent[7]), "GET /v1/private-servers/my-private-servers?privateServerResultsFilter=MyPrivateServers&itemsPerPage=100 HTTP/1.1");
+    assert_eq!(first_line(&sent[8]), "GET /v1/private-servers/my-private-servers?privateServerResultsFilter=MyPrivateServers&itemsPerPage=100&cursor=c%202 HTTP/1.1");
 }

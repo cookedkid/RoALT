@@ -4,6 +4,10 @@
 
 #[cfg(windows)]
 pub mod afk;
+#[cfg(windows)]
+pub(crate) mod audio;
+#[cfg(windows)]
+mod autopsy;
 #[cfg(target_os = "macos")]
 #[path = "macos/afk.rs"]
 pub mod afk;
@@ -39,6 +43,8 @@ pub mod qos;
 pub mod qos;
 #[cfg(windows)]
 pub mod resize;
+#[cfg(windows)]
+pub mod thumbs;
 #[cfg(target_os = "macos")]
 #[path = "macos/resize.rs"]
 pub mod resize;
@@ -52,8 +58,7 @@ mod tracker;
 pub(crate) use tracker::Ended;
 
 pub mod rejoin;
-pub use tracker::{Tracker, Transition, challenged, closed, hung, unexpected, wrong_account};
-
+pub use tracker::{Tracker, Transition, auth_failed, challenged, closed, frame_size, hung, layout_batch_done, unexpected, wrong_account};
 #[cfg(target_os = "macos")]
 #[path = "macos/native.rs"]
 pub(crate) mod native;

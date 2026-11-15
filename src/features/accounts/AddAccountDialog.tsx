@@ -1,25 +1,91 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { open as openFile } from "@tauri-apps/plugin-dialog";
 import { api, asError, type AccountSummary, type ImportReport } from "../../api";
-import { qk } from "../../data";
-import { Dialog } from "../../ui/Dialog";
-import { Icon } from "../../ui/Icon";
-import { friendly, toast } from "../../ui/Toast";
+import { qk, useGroups } from "../../data";
 import { fmtList, t, tx } from "../../i18n";
+import { Button } from "../../ui/Button";
+import { Segmented } from "../../ui/controls";
+import { Dialog, DialogSteps } from "../../ui/Dialog";
+import { Select } from "../../ui/Field";
+import { Morph } from "../../ui/motion";
+import { friendly, toast } from "../../ui/Toast";
 
 export type Tab = "login" | "cookie" | "many";
 
+/** The start of every .ROBLOSECURITY value: lines holding one are cookie imports. */
+const COOKIE_MARK = "_|WARNING:-DO-NOT-SHARE-THIS.";
+type Login = { username: string; password: string };
+
+/** The `user:pass` lines of pasted text (pure): split at the first ":" (a password may hold more),
+ * both parts trimmed, cookie lines and lines without both parts left out, each username once. */
+export function parseLogins(text: string): Login[] {
+  const seen = new Set<string>();
+  const out: Login[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    const at = line.indexOf(":");
+    if (line.includes(COOKIE_MARK) || at < 0) continue;
+    const username = line.slice(0, at).trim();
+    // Trimmed: stray spaces around pasted lines are far likelier than a password's own.
+    const password = line.slice(at + 1).trim();
+    if (!username || !password || seen.has(username.toLowerCase())) continue;
+    seen.add(username.toLowerCase());
+    out.push({ username, password });
+  }
+  return out;
+}
+
+const TABS: Tab[] = ["login", "cookie", "many"];
 const RAM_FILTER = [{ name: "Roblox Account Manager", extensions: ["json"] }];
 
-export function AddAccountDialog({ open, startOn = "login", onClose, onAdded }: {
+/** One step of a DialogSteps flow. It puts the focus on its own [data-first] control (else its first
+ * field) as it arrives. Two frames late on purpose: DialogSteps focuses the first [data-autofocus] it
+ * finds a frame after the change, and that can be in the step still leaving. */
+export function Step({ className = "", children }: { className?: string; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    let id = requestAnimationFrame(() => {
+      id = requestAnimationFrame(() => (el?.querySelector<HTMLElement>("[data-first]") ?? el?.querySelector<HTMLElement>("input, textarea"))?.focus());
+    });
+    return () => cancelAnimationFrame(id);
+  }, []);
+  return (
+    <div ref={ref} className={`dlg-body flex flex-col gap-3 ${className}`}>
+      {children}
+    </div>
+  );
+}
+
+/** `group`: the group open in Accounts, offered as the one new accounts go into. `onAdded` is told
+ * the group the account was put in (null: none). */
+export function AddAccountDialog({ open, startOn = "login", group = null, onClose, onAdded }: {
   open: boolean;
   startOn?: Tab;
+  group?: number | null;
   onClose: () => void;
-  onAdded: (a: AccountSummary) => void;
+  onAdded: (a: AccountSummary, group: number | null) => void;
 }) {
   const qc = useQueryClient();
+  const groups = useGroups().data ?? [];
+  // "": no group. A group deleted meanwhile is none.
+  const [into, setInto] = useState("");
+  const gid = groups.some((g) => String(g.id) === into) ? Number(into) : null;
+  /** Puts `a` into the picked group, keeping the ones it has; its failure is a toast, the account stays added. */
+  const file = async (a: AccountSummary) => {
+    if (gid === null || a.groupIds.includes(gid)) return;
+    await api.accountUpdate(a.id, { groupIds: [...a.groupIds, gid] }).catch((e) => toast(friendly(asError(e)), "error"));
+  };
+  /** The accounts there are now, asked of the backend (not the page's copy, which may not be read
+   * yet: every account would then count as new). Null with no group picked: nothing to file. */
+  const known = async () => (gid === null ? null : new Set((await api.accountsList()).map((a) => a.id)));
+  /** Puts every account an import added (those not in `had`) into the picked group. */
+  const fileNew = async (had: Set<number> | null) => {
+    if (had === null) return;
+    for (const a of await api.accountsList()) if (!had.has(a.id)) await file(a);
+  };
   const [tab, setTab] = useState<Tab>(startOn);
+  const [direction, setDirection] = useState<1 | -1>(1);
   const [error, setError] = useState<string | null>(null);
   // While rendering, not in an effect: Dialog focuses a field of the panel that shows when it opens.
   const [wasOpen, setWasOpen] = useState(open);
@@ -28,6 +94,7 @@ export function AddAccountDialog({ open, startOn = "login", onClose, onAdded }: 
     if (open) {
       setTab(startOn);
       setError(null);
+      setInto(group === null ? "" : String(group));
     }
   }
   // Closed while its request ran: the account is still added, but the app stays where it is.
@@ -37,20 +104,35 @@ export function AddAccountDialog({ open, startOn = "login", onClose, onAdded }: 
   const [busy, setBusy] = useState(false);
   const [cookie, setCookie] = useState("");
   const [many, setMany] = useState("");
+  // The sign-in under way of a `user:pass` import; `stop` is true unless one runs (or once it should end).
+  const [queue, setQueue] = useState<{ n: number; total: number; name: string } | null>(null);
+  const stop = useRef(true);
 
   useEffect(() => {
     if (open) return;
     setCookie("");
     setMany("");
     setError(null);
+    // Closed mid-import: no more sign-in windows, and the open one goes.
+    if (!stop.current) {
+      stop.current = true;
+      void api.accountLoginCancel().catch(() => {});
+    }
   }, [open]);
 
-  const added = (a: AccountSummary) => {
+  const pick = (next: Tab) => {
+    setDirection(TABS.indexOf(next) > TABS.indexOf(tab) ? 1 : -1);
+    setTab(next);
+    setError(null);
+  };
+
+  const added = async (a: AccountSummary) => {
+    await file(a);
     qc.invalidateQueries({ queryKey: qk.accounts });
     qc.invalidateQueries({ queryKey: qk.vault });
     toast(t("accounts.add.added", { name: a.username }));
     if (stillOpen.current) {
-      onAdded(a);
+      onAdded(a, gid);
       onClose();
     }
   };
@@ -59,7 +141,7 @@ export function AddAccountDialog({ open, startOn = "login", onClose, onAdded }: 
     setError(null);
     setWaiting(true);
     try {
-      added(await api.accountAddLogin());
+      await added(await api.accountAddLogin());
     } catch (e) {
       const err = asError(e);
       if (err.kind !== "cancelled") setError(friendly(err));
@@ -76,7 +158,7 @@ export function AddAccountDialog({ open, startOn = "login", onClose, onAdded }: 
     setError(null);
     setBusy(true);
     try {
-      added(await api.accountAddCookie(value));
+      await added(await api.accountAddCookie(value));
     } catch (e) {
       setError(friendly(asError(e)));
     } finally {
@@ -93,8 +175,14 @@ export function AddAccountDialog({ open, startOn = "login", onClose, onAdded }: 
       r.skipped && t("accounts.add.importRepeated", { count: r.skipped }),
       r.failed && t("accounts.add.importFailed", { count: r.failed }),
     ].filter((p): p is string => !!p);
-    toast(t("accounts.add.importResult", { list: fmtList(parts) }));
-    if (r.added + r.updated > 0) onClose();
+    const text = t("accounts.add.importResult", { list: fmtList(parts) });
+    if (r.added + r.updated > 0) {
+      toast(text);
+      onClose();
+    } else {
+      // The dialog stays: the outcome shows in it, as a toast would sit under its backdrop.
+      setError(text);
+    }
   };
 
   /** Pasted lists and Roblox Account Manager files both go one cookie at a time. */
@@ -102,7 +190,10 @@ export function AddAccountDialog({ open, startOn = "login", onClose, onAdded }: 
     setError(null);
     setBusy(true);
     try {
-      imported(await run());
+      const had = await known();
+      const r = await run();
+      await fileNew(had);
+      imported(r);
     } catch (e) {
       setError(friendly(asError(e)));
     } finally {
@@ -115,8 +206,49 @@ export function AddAccountDialog({ open, startOn = "login", onClose, onAdded }: 
     const value = many;
     setMany(""); // as with one cookie, the field never keeps what was submitted
     if (!value.trim() || busy) return;
-    runImport(() => api.accountsImportCookies(value));
+    const logins = parseLogins(value);
+    runImport(async () => {
+      // Cookies first (also what says "nothing found" when there is neither), then the sign-ins.
+      const r = value.includes(COOKIE_MARK) || !logins.length ? await api.accountsImportCookies(value) : { added: 0, updated: 0, skipped: 0, failed: 0, settings: null };
+      return logins.length ? signInEach(logins, r) : r;
+    });
   }
+
+  /** One Roblox sign-in window after another, each filled in from its line; the user finishes each
+   * (captcha, Log In) or closes it to skip. Stop ends it after the open one. */
+  async function signInEach(logins: Login[], r: ImportReport) {
+    const had = new Set((qc.getQueryData<AccountSummary[]>(qk.accounts) ?? []).map((a) => a.id));
+    let refused: string | null = null;
+    stop.current = false;
+    try {
+      for (const [i, fill] of logins.entries()) {
+        if (stop.current) break;
+        setQueue({ n: i + 1, total: logins.length, name: fill.username });
+        try {
+          const a = await api.accountAddLogin(fill);
+          if (had.has(a.id)) r.updated++;
+          else r.added++;
+        } catch (e) {
+          const err = asError(e);
+          if (err.kind === "locked") throw e;
+          if (err.kind !== "cancelled") {
+            r.failed++;
+            refused = friendly(err);
+          }
+        }
+      }
+    } finally {
+      stop.current = true;
+      setQueue(null);
+    }
+    if (refused) toast(refused, "error");
+    return r;
+  }
+
+  const stopQueue = () => {
+    stop.current = true;
+    void api.accountLoginCancel().catch(() => {});
+  };
 
   async function fromRam() {
     if (busy) return;
@@ -127,114 +259,129 @@ export function AddAccountDialog({ open, startOn = "login", onClose, onAdded }: 
     if (path) runImport(() => api.accountsImportRam(path));
   }
 
-  const choice = (id: Tab, label: string, desc: string, easiest?: boolean) => (
-    <button
-      type="button"
-      className="btn pick"
-      aria-pressed={tab === id}
-      onClick={() => {
-        setTab(id);
-        setError(null);
-      }}
-    >
-      <span aria-hidden="true" className="tick tick-round"><Icon name="check" size={14} /></span>
-      <span className="flex-1 min-w-0 flex flex-col">
-        <span className="flex flex-wrap items-center gap-2">
-          {label}
-          {easiest && <span className="tag text-accent-text font-medium">{t("accounts.add.easiest")}</span>}
-        </span>
-        <span className="text-[13px] font-normal text-dim">{desc}</span>
-      </span>
-    </button>
+  const alert = error && (
+    <p role="alert" className="alert">
+      {error}
+    </p>
   );
+  const secret = { autoComplete: "off", autoCorrect: "off", autoCapitalize: "off", spellCheck: false } as const;
 
   return (
-    <Dialog open={open} onClose={onClose} title={t("accounts.add.dialogTitle")} width={540}>
-      <p className="px-5 pb-3 text-dim">{t("accounts.add.staysHere")}</p>
-      <div role="group" aria-label={t("accounts.add.how")} className="flex flex-col gap-3 px-5">
-        {choice("login", t("accounts.add.tabLogin"), t("accounts.add.descLogin"), true)}
-        {choice("cookie", t("accounts.add.tabCookie"), t("accounts.add.descCookie"))}
-        {choice("many", t("accounts.add.tabMany"), t("accounts.add.descMany"))}
+    <Dialog open={open} onClose={onClose} title={t("accounts.add.dialogTitle")} width={520}>
+      <div className="dlg-body flex flex-col items-start gap-3 pb-1">
+        <p className="-mt-1 text-[13px] text-fg-3">{t("accounts.add.staysHere")}</p>
+        <Segmented
+          label={t("accounts.add.how")}
+          value={tab}
+          onChange={pick}
+          options={[
+            { value: "login", label: t("accounts.add.tabLogin") },
+            { value: "cookie", label: t("accounts.add.tabCookie") },
+            { value: "many", label: t("accounts.add.tabMany") },
+          ]}
+        />
+        {groups.length > 0 && (
+          <label className="flex items-center gap-2 text-[13px] text-fg-2">
+            {t("accounts.addToGroup")}
+            <Select
+              aria-label={t("accounts.addToGroup")}
+              value={gid === null ? "" : String(gid)}
+              onChange={setInto}
+              options={[{ value: "", label: t("accounts.add.noGroup") }, ...groups.map((g) => ({ value: String(g.id), label: g.name }))]}
+            />
+          </label>
+        )}
       </div>
-
-      {tab === "login" ? (
-        <div key="login" className="enter flex flex-col gap-3 p-5">
-          {waiting ? (
-            <div className="enter flex flex-col gap-2.5 py-1" role="status">
-              <div className="live-bar" />
-              <span>{t("accounts.add.waiting")}</span>
-            </div>
-          ) : (
-            <button type="button" className="btn btn-primary min-h-[52px]" onClick={signIn} data-autofocus>
-              <Icon name="external" size={14} />
-              {t("accounts.add.openSignIn")}
-            </button>
-          )}
-          <p className="text-dim text-xs">
-            {t("accounts.add.loginPrivate")}
-          </p>
-          {error && <div role="alert" className="alert">{error}</div>}
-        </div>
-      ) : tab === "many" ? (
-        <form key="many" onSubmit={pasteMany} className="enter flex flex-col gap-3 p-5">
-          <label className="flex flex-col gap-1.5">
-            <span className="label">{t("accounts.add.manyLabel")}</span>
-            <textarea
-              className="field secret mono text-xs"
-              rows={6}
-              value={many}
-              onChange={(e) => setMany(e.target.value)}
-              autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-              spellCheck={false}
-              placeholder={t("accounts.add.manyPlaceholder")}
-            />
-          </label>
-          <p className="text-xs text-dim">
-            {tx("accounts.add.manyHelp", {}, { mono: (s) => <span className="mono">{s}</span> })}
-          </p>
-          {busy && <div className="live-bar" role="status" aria-label={t("accounts.add.importing")} />}
-          {error && <div role="alert" className="alert">{error}</div>}
-          <div className="flex flex-wrap justify-between gap-2 pt-1">
-            <button type="button" className="btn" onClick={fromRam} disabled={busy} title={t("accounts.add.ramHint")}>
-              <Icon name="upload" size={14} />
-              {t("accounts.add.ramImport")}
-            </button>
-            <button type="submit" className="btn btn-primary" disabled={busy || !many.trim()}>
-              {busy ? t("accounts.add.importingEllipsis") : t("accounts.add.import")}
-            </button>
-          </div>
-        </form>
-      ) : (
-        <form key="cookie" onSubmit={paste} className="enter flex flex-col gap-3 p-5">
-          <label className="flex flex-col gap-1.5">
-            <span className="label">{t("accounts.add.cookieLabel")}</span>
-            <textarea
-              className="field secret mono text-xs"
-              rows={4}
-              value={cookie}
-              onChange={(e) => setCookie(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), e.currentTarget.form?.requestSubmit())}
-              autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-              spellCheck={false}
-              placeholder={t("accounts.add.cookiePlaceholder")}
-            />
-          </label>
-          <p className="text-xs text-dim">
-            {tx("accounts.add.cookieHelp", {}, { mono: (s) => <span className="mono">{s}</span> })}
-          </p>
-          {error && <div role="alert" className="alert">{error}</div>}
-          <div className="flex justify-end gap-2 pt-1">
-            <button type="button" className="btn" onClick={onClose}>{t("common.cancel")}</button>
-            <button type="submit" className="btn btn-primary" disabled={busy || !cookie.trim()}>
-              {busy ? t("accounts.status.checking") : t("accounts.add.title")}
-            </button>
-          </div>
-        </form>
-      )}
+      <DialogSteps step={tab} direction={direction}>
+        {tab === "login" ? (
+          <Step className="pt-3">
+            <p className="text-fg-2">{t("accounts.add.descLogin")}</p>
+            <Morph axis="height">
+              {waiting ? (
+                <div key="wait" role="status" className="enter flex flex-col gap-2.5 py-1">
+                  <div className="live-bar" />
+                  <span>{t("accounts.add.waiting")}</span>
+                  <span className="text-[13px] text-fg-3">{t("accounts.add.loginPrivate")}</span>
+                </div>
+              ) : (
+                <Button key="go" variant="primary" icon="external" block className="min-h-[52px]" data-first onClick={signIn}>
+                  {t("accounts.add.openSignIn")}
+                </Button>
+              )}
+            </Morph>
+            {alert}
+          </Step>
+        ) : tab === "cookie" ? (
+          <form onSubmit={paste}>
+            <Step className="pt-3">
+              <p className="text-fg-2">{t("accounts.add.descCookie")}</p>
+              <label className="flex flex-col gap-1.5">
+                <span className="label">{t("accounts.add.cookieLabel")}</span>
+                <textarea
+                  className="field secret mono text-xs"
+                  rows={4}
+                  value={cookie}
+                  onChange={(e) => setCookie(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), e.currentTarget.form?.requestSubmit())}
+                  placeholder={t("accounts.add.cookiePlaceholder")}
+                  {...secret}
+                />
+              </label>
+              <p className="text-[13px] text-fg-3">{tx("accounts.add.cookieHelp", {}, { mono: (s) => <span className="mono">{s}</span> })}</p>
+              {alert}
+              <div className="flex justify-end gap-2 pt-1">
+                <Button onClick={onClose}>{t("common.cancel")}</Button>
+                <Button type="submit" variant="primary" busy={busy} disabled={!busy && !cookie.trim()}>
+                  {busy ? t("accounts.status.checking") : t("accounts.add.title")}
+                </Button>
+              </div>
+            </Step>
+          </form>
+        ) : (
+          <form onSubmit={pasteMany}>
+            <Step className="pt-3">
+              <p className="text-fg-2">{t("accounts.add.descMany")}</p>
+              <label className="flex flex-col gap-1.5">
+                <span className="label">{t("accounts.add.manyLabel")}</span>
+                <textarea
+                  className="field secret mono text-xs"
+                  rows={6}
+                  value={many}
+                  onChange={(e) => setMany(e.target.value)}
+                  placeholder={t("accounts.add.manyPlaceholder")}
+                  {...secret}
+                />
+              </label>
+              <p className="text-[13px] text-fg-3">{tx("accounts.add.manyHelp", {}, { mono: (s) => <span className="mono">{s}</span> })}</p>
+              {queue ? (
+                <div role="status" className="flex flex-col gap-2">
+                  <div className="live-bar" />
+                  <span>{t("accounts.add.queue", { n: queue.n, total: queue.total, name: queue.name })}</span>
+                  <span className="text-[13px] text-fg-3">{t("accounts.add.queueHint")}</span>
+                  <div>
+                    <Button size="sm" icon="stop" onClick={stopQueue}>{t("accounts.add.stop")}</Button>
+                  </div>
+                </div>
+              ) : (
+                busy && <div className="live-bar" role="status" aria-label={t("accounts.add.importing")} />
+              )}
+              {alert}
+              <div className="flex flex-col items-start gap-1.5">
+                <Button icon="upload" disabled={busy} aria-describedby="acc-ram-hint" onClick={fromRam}>
+                  {t("accounts.add.ramImportEllipsis")}
+                </Button>
+                <p id="acc-ram-hint" className="text-[13px] text-fg-3">{t("accounts.add.ramHint")}</p>
+              </div>
+              <div className="flex justify-end gap-2 pt-1">
+                <Button onClick={onClose}>{t("common.cancel")}</Button>
+                <Button type="submit" variant="primary" busy={busy} disabled={!busy && !many.trim()}>
+                  {busy ? t("accounts.add.importingEllipsis") : t("accounts.add.import")}
+                </Button>
+              </div>
+            </Step>
+          </form>
+        )}
+      </DialogSteps>
     </Dialog>
   );
 }

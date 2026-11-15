@@ -1,22 +1,24 @@
 <div align="center">
 
-# RoALT for macOS — 0.8.6
+# RoALT for macOS — 1.2.301
 
 ### A native Apple Silicon port of the Roblox account manager
 
 This fork ports [inspectsoftware/RoALT](https://github.com/inspectsoftware/RoALT) to macOS. It keeps the original React interface and replaces Windows system calls with macOS implementations. **The port is still in progress; it does not yet have every Windows feature.**
 
-![RoALT interface](docs/images/home.png)
+![RoALT interface](docs/images/home.webp)
 
 [Features](#features) · [Install](#install-on-macos) · [FAQ](#faq) · [Technical notes](docs/MACOS_PORT.md)
 
 </div>
 
-## beta 0.8.0 Mac update
+## Windows v1.2.301 integration
 
-Includes upstream account tabs, sortable/resizable preview cards, compact view, expanded languages, settings layout and launch/profile fixes. Optimization comes first: a shared cooperative CPU budget scales with client count; foreground, loading, unresponsive and Full quality clients are exempt from automatic limits. Explicit per-client limits remain in effect. Efficiency-only mode disables the shared cap and avoids intentional pauses. Mac previews stay at 2/5/10 FPS with at most 10 requests per second across visible cards.
+Updated from Mac 0.9.0 to the Windows **v1.2.301** source baseline (`5923226`, checked November 14, 2026). This includes the upstream interface redesign, themes, settings search, account/group profiles, social tools, custom flags, launch/rejoin fixes and Discord options. Native Mac process, Keychain, window, updater and performance implementations are retained.
 
-Home CPU and memory now total tracked Roblox clients. Mac memory is physical footprint; GPU remains clearly labeled as whole-Mac utilization. Windows memory trimming, hard CPU quotas and invisible/click-through live windows are not ported. Mac uses ordinary minimize/restore, and minimized clients have no live preview. No claim is made that Windows' 295 MB example is achievable on Mac.
+**[Full feature-by-feature audit](docs/MACOS_FEATURE_AUDIT.md)** includes every registered command and settings row, small UI features, platform differences and unimplemented features. “Ported” means implemented and compiled, not every live Roblox action tested.
+
+Export an encrypted `.roalt` backup before upgrading. The new database schema cannot be opened by older builds. The Windows screenshot below illustrates the shared interface; Mac-only restrictions are described in the audit.
 
 ## Features
 
@@ -25,16 +27,20 @@ Home CPU and memory now total tracked Roblox clients. Mac memory is physical foo
 | Accounts and vault | Roblox account management, account checks, encrypted database, master password, recovery code and encrypted backups are ported. Keychain replaces Windows DPAPI; Touch ID is used where available. |
 | Launch and multi-instance | Native Roblox launch, multiple clients, batches and shared sign-in protection are ported. Two test clients ran together, but simultaneous authenticated game joins still need user testing. |
 | Performance | CPU and memory monitoring, background priority, FPS and low graphics settings, and cooperative CPU caps are ported. CPU caps can cause stutter and are not kernel quotas. |
-| Windows and previews | Focus, minimize/restore, tiling, tiny windows and live previews are ported. Accessibility and Screen Recording permission are required. Preview rates are 2, 5 or 10 FPS. |
-| Anti-AFK | While you are idle, RoALT brings a tracked game forward, clicks its center, and minimizes it a second later. |
+| Windows and previews | Focus, minimize/restore, tiling and screenshot previews are implemented. Resizing respects Roblox’s minimum window size; minimized windows have no live preview. Accessibility and Screen Recording permission are required. Preview rates are 2, 5 or 10 FPS. |
+| Anti-AFK | Opt-in foreground F13 input at the configured interval, with human-input safeguards and prior focus/minimized-state restoration. Live idle-kick prevention needs testing. |
 
 ### Still missing or different from Windows
 
-- Kernel CPU quotas, core affinity/spreading, memory trimming, bandwidth shaping and per-client GPU/VRAM counters remain unsupported.
-- Scheduled shutdown, Windows-style public-network classification, and automatic installation and updating of Roblox itself.
-- Developer ID signing/notarization and Intel/universal builds. The Mac ZIP is an ad-hoc signed preview.
+- No Windows memory trimming, hard CPU quotas, CPU affinity/spreading, bandwidth shaping, per-client GPU/VRAM counters or per-client audio muting. Mac caps are cooperative and can stutter; background priority does not guarantee efficiency-core placement.
+- No replay-buffer video/audio recording. Existing clip files can be browsed, played, renamed and moved to Trash.
+- Modpack ZIP library management is included; applying replacements to Roblox’s signed Mac bundle is not implemented.
+- Protected embedded Roblox Browse, purchase blocking and persistent account browser profiles are not ported. Mac retains isolated ephemeral sign-in/account browser windows, plus the native discovery tabs.
+- Default Roblox protocol-handler registration, external browser-launch handoff, Roblox player automatic installation/updates, scheduled system shutdown, Windows network classification and watchdog stack capture/restart are not ported.
+- Mac window resizing obeys Roblox’s minimum size; hidden/minimized live DWM thumbnails and Windows invisible/click-through windows are unavailable. Layout placement currently uses the primary display.
+- Developer ID signing/notarization and Intel/universal builds are missing. Ad-hoc updates may require renewed privacy permissions.
 
-Unsupported controls are hidden or rejected on macOS. See [the port notes](docs/MACOS_PORT.md) for implementation details and the remaining acceptance checks. The [original Windows repository](https://github.com/inspectsoftware/RoALT) documents Windows-specific features.
+See the [complete audit](docs/MACOS_FEATURE_AUDIT.md) for partial features and exact limitations. Unsupported settings are hidden or rejected; the public-network guard remains visible to undo an existing restriction, but cannot classify Mac networks.
 
 ## Install on macOS
 
@@ -69,7 +75,7 @@ On first launch with no microphone decision on record, macOS asks whether to all
 
 ### New Mac controls
 
-Performance → Mac background behavior offers an App Nap override for Roblox. App Nap changes affect all Roblox clients on their next launch and may increase power use. Disabling the override restores the previous preference. Efficiency-only adaptive limits lower CPU/I/O priority without deliberate pauses; core placement remains controlled by macOS. System GPU utilization appears in Home and Monitor only when the driver reports it, and is never attributed to individual clients.
+Settings → Performance → Mac background behavior offers an App Nap override for Roblox. App Nap changes affect all Roblox clients on their next launch and may increase power use. Disabling the override restores the previous preference. Efficiency-only adaptive limits lower CPU/I/O priority without deliberate pauses; core placement remains controlled by macOS. System GPU utilization appears in Home and Monitor only when the driver reports it, and is never attributed to individual clients.
 
 ## Quick start
 
@@ -117,7 +123,7 @@ Enable **Multi-instance** in RoALT and launch clients from RoALT. The Mac port u
 <summary><b>Does anti-AFK guarantee I will not be kicked?</b></summary>
 <br>
 
-Idle prevention depends on whether the game accepts the click. Test it in the experience you run.
+Idle prevention depends on whether the game accepts the F13 key. Test it in the experience you run.
 
 </details>
 

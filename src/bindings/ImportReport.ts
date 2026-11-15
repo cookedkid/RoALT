@@ -4,4 +4,8 @@ export type ImportReport = { added: number, updated: number, skipped: number,
 /**
  * Cookies Roblox refused, or entries without one.
  */
-failed: number, };
+failed: number, 
+/**
+ * A backup's settings were asked for and it had some: whether they were applied.
+ */
+settings: boolean | null, };

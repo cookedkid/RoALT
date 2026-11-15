@@ -50,7 +50,11 @@ relaunching: boolean,
  */
 relaunchProblem: string | null, 
 /**
- * Its note is "Signed in as another account" or "Roblox wants a human check" (the note
- * itself is translated, so the UI can't match its text).
+ * Its note is "Signed in as another account", "Roblox wants a human check" or "Roblox refused
+ * the sign-in (error 403)" (the note itself is translated, so the UI can't match its text).
  */
-signInProblem: boolean, };
+signInProblem: boolean, 
+/**
+ * What it really has now, settings' limits included (`limits` is only what was set on it).
+ */
+appliedLimits: Limits, };

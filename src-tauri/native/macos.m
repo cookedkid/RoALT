@@ -170,3 +170,13 @@ int ro_open_log(int pid, uint64_t start, const char *directory, char *out, int c
  if(proc_pidinfo(pid,PROC_PIDTBSDINFO,0,&b,sizeof(b))!=sizeof(b)||b.pbi_start_tvsec!=start||b.pbi_uid!=getuid())return 0;
  return found;
 }
+
+int ro_window_minimized(int pid) {
+ if(!AXIsProcessTrusted()) return -1;
+ AXUIElementRef root=AXUIElementCreateApplication(pid);AXUIElementSetMessagingTimeout(root,0.2);
+ CFTypeRef list=NULL;AXError e=AXUIElementCopyAttributeValue(root,kAXWindowsAttribute,&list);CFRelease(root);
+ if(e||!list)return -1;int result=-1;
+ if(CFArrayGetCount(list)>0){AXUIElementRef w=(AXUIElementRef)CFArrayGetValueAtIndex(list,0);CFTypeRef mini=NULL;
+ if(AXUIElementCopyAttributeValue(w,kAXMinimizedAttribute,&mini)==kAXErrorSuccess&&mini){if(CFGetTypeID(mini)==CFBooleanGetTypeID())result=CFBooleanGetValue(mini)?1:0;CFRelease(mini);}}
+ CFRelease(list);return result;
+}

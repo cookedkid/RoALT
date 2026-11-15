@@ -3,7 +3,6 @@ use crate::{
     App,
     commands::{instances_changed, now_ms},
     error::{AppError, Result},
-    model::AfkMode,
 };
 use std::{thread::sleep, time::Duration};
 use tauri::{AppHandle, Manager};
@@ -22,7 +21,7 @@ unsafe extern "C" {
     fn ro_afk_ready() -> i32;
     fn ro_afk_press(pid: i32, start: u64) -> i32;
 }
-pub fn validate(_: AfkMode) -> Result<()> {
+pub fn validate() -> Result<()> {
     if unsafe { ro_afk_ready() } != 0 {
         return Err(AppError::Invalid("Enable RoALT in System Settings → Privacy & Security → Accessibility and Input Monitoring, then restart RoALT before enabling anti-AFK.".into()));
     }

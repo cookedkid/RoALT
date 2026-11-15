@@ -2,6 +2,13 @@
 import { invoke as rawInvoke, type InvokeArgs } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { AccountInfo } from "./bindings/AccountInfo";
+import type { BrowseNav } from "./bindings/BrowseNav";
+import type { GameSort } from "./bindings/GameSort";
+import type { GameStats } from "./bindings/GameStats";
+import type { AccountValue } from "./bindings/AccountValue";
+import type { PlaytimeRow } from "./bindings/PlaytimeRow";
+import type { PaneRect } from "./bindings/PaneRect";
+import type { ThumbPlace } from "./bindings/ThumbPlace";
 import type { AccountPatch } from "./bindings/AccountPatch";
 import type { AccountPresence } from "./bindings/AccountPresence";
 import type { AccountSummary } from "./bindings/AccountSummary";
@@ -12,7 +19,10 @@ import type { BulkRequest } from "./bindings/BulkRequest";
 import type { ClientMetrics } from "./bindings/ClientMetrics";
 import type { SystemUsage } from "./bindings/SystemUsage";
 import type { Profile } from "./bindings/Profile";
+import type { Benchmark } from "./bindings/Benchmark";
+import type { Specs } from "./bindings/Specs";
 import type { ServerVisit } from "./bindings/ServerVisit";
+import type { PlayedServer } from "./bindings/PlayedServer";
 import type { ConflictPolicy } from "./bindings/ConflictPolicy";
 import type { Crash } from "./bindings/Crash";
 import type { DataDir } from "./bindings/DataDir";
@@ -25,6 +35,8 @@ import type { Group } from "./bindings/Group";
 import type { GroupInput } from "./bindings/GroupInput";
 import type { Headshot } from "./bindings/Headshot";
 import type { ImportReport } from "./bindings/ImportReport";
+import type { FriendReport } from "./bindings/FriendReport";
+import type { CookieExport } from "./bindings/CookieExport";
 import type { InstallProgress } from "./bindings/InstallProgress";
 import type { Instance } from "./bindings/Instance";
 import type { JoinCandidate } from "./bindings/JoinCandidate";
@@ -32,16 +44,38 @@ import type { LaunchInfo } from "./bindings/LaunchInfo";
 import type { LaunchTarget } from "./bindings/LaunchTarget";
 import type { Limits } from "./bindings/Limits";
 import type { LogsCleaned } from "./bindings/LogsCleaned";
+import type { Market } from "./bindings/Market";
+import type { ModsList } from "./bindings/ModsList";
+import type { ClipItem } from "./bindings/ClipItem";
+import type { ClipsStatus } from "./bindings/ClipsStatus";
+import type { ModImported } from "./bindings/ModImported";
 import type { MultiInstanceStatus } from "./bindings/MultiInstanceStatus";
 import type { Notice } from "./bindings/Notice";
+import type { Online } from "./bindings/Online";
+import type { Outfits } from "./bindings/Outfits";
 import type { ParsedInput } from "./bindings/ParsedInput";
 import type { PrivateServerPage } from "./bindings/PrivateServerPage";
+import type { PrivateServerBuy } from "./bindings/PrivateServerBuy";
+import type { PrivateServerPatch } from "./bindings/PrivateServerPatch";
+import type { PrivateServerSettings } from "./bindings/PrivateServerSettings";
 import type { NetworkStatus } from "./bindings/NetworkStatus";
+import type { Extras } from "./bindings/Extras";
+import type { News } from "./bindings/News";
 import type { RobloxClient } from "./bindings/RobloxClient";
+import type { RobloxLauncher } from "./bindings/RobloxLauncher";
 import type { ServerOrder } from "./bindings/ServerOrder";
 import type { ServerPage } from "./bindings/ServerPage";
 import type { Settings } from "./bindings/Settings";
 import type { SettingsPatch } from "./bindings/SettingsPatch";
+import type { FriendRequest } from "./bindings/FriendRequest";
+import type { OwnedPrivateServer } from "./bindings/OwnedPrivateServer";
+import type { PlaytimeDay } from "./bindings/PlaytimeDay";
+import type { RobuxKind } from "./bindings/RobuxKind";
+import type { RobuxTotals } from "./bindings/RobuxTotals";
+import type { RobuxTransaction } from "./bindings/RobuxTransaction";
+import type { TradeDetail } from "./bindings/TradeDetail";
+import type { TradeKind } from "./bindings/TradeKind";
+import type { TradeRow } from "./bindings/TradeRow";
 import type { UserRef } from "./bindings/UserRef";
 import type { VaultMode } from "./bindings/VaultMode";
 import type { VaultStatus } from "./bindings/VaultStatus";
@@ -49,31 +83,42 @@ import type { VaultStatus } from "./bindings/VaultStatus";
 export type {
   AccountInfo, AccountPresence, Headshot,
   Favourite, FavouriteInput, JoinCandidate, LaunchInfo, LaunchTarget, ParsedInput, UserRef,
-  BandwidthStatus, ClientMetrics, Crash, DiscordStatus, Instance, MultiInstanceStatus, BulkProgress, BulkRequest, ServerOrder, ServerPage, GameInfo, PrivateServerPage, DataDir, LogsCleaned, Notice, RobloxClient,
+  BandwidthStatus, ClientMetrics, Crash, DiscordStatus, Instance, MultiInstanceStatus, BulkProgress, BulkRequest, ServerOrder, ServerPage, GameInfo, PrivateServerPage, DataDir, LogsCleaned, Notice, RobloxClient, RobloxLauncher,
   AccountPatch, AccountSummary, AppUpdate, ConflictPolicy, ErrorPayload, Group, GroupInput,
   ImportReport, InstallProgress, Settings, SettingsPatch, VaultMode, VaultStatus,
 };
 export type { AccountStatus } from "./bindings/AccountStatus";
-export type { Adaptive } from "./bindings/Adaptive";
+export type { NewsItem } from "./bindings/NewsItem";
+export type { NewsSource } from "./bindings/NewsSource";
 export type { Profile } from "./bindings/Profile";
-export type { SystemUsage } from "./bindings/SystemUsage";
 export type { ServerVisit } from "./bindings/ServerVisit";
-export type { AfkMode } from "./bindings/AfkMode";
+export type { PlayedServer } from "./bindings/PlayedServer";
 export type { AntiAfk } from "./bindings/AntiAfk";
-export type { BulkItem } from "./bindings/BulkItem";
 export type { BulkStage } from "./bindings/BulkStage";
 export type { CrashKind } from "./bindings/CrashKind";
 export type { Density } from "./bindings/Density";
 export type { DiscordEvents } from "./bindings/DiscordEvents";
 export type { GameServer } from "./bindings/GameServer";
 export type { PrivateServer } from "./bindings/PrivateServer";
+export type { PrivateServerBuy, PrivateServerPatch, PrivateServerSettings };
 export type { SameServer } from "./bindings/SameServer";
 export type { InstanceState } from "./bindings/InstanceState";
 export type { Limits } from "./bindings/Limits";
 export type { Presence } from "./bindings/Presence";
 export type { PresenceKind } from "./bindings/PresenceKind";
-export type { Subscription } from "./bindings/Subscription";
-export type { Theme } from "./bindings/Theme";
+export type { BrowsePage } from "./bindings/BrowsePage";
+export type { BrowsePlay } from "./bindings/BrowsePlay";
+export type { BrowseBlocked } from "./bindings/BrowseBlocked";
+export type { PaneRect, GameStats, AccountValue };
+export type { PopularGame } from "./bindings/PopularGame";
+export type { GamePass } from "./bindings/GamePass";
+export type { GameBadge } from "./bindings/GameBadge";
+export type { LimitedItem } from "./bindings/LimitedItem";
+export type { RolimonsItem } from "./bindings/RolimonsItem";
+import type { PlayerStats } from "./bindings/PlayerStats";
+import type { PlayerValue } from "./bindings/PlayerValue";
+export type { PlayerStats, PlayerValue };
+import type { PageCard } from "./bindings/PageCard";
 
 /** What instance_show does with a client's window (window::Show). */
 export type WindowShow = "focus" | "minimize" | "restore";
@@ -99,7 +144,7 @@ function invoke<T>(cmd: string, args?: InvokeArgs): Promise<T> {
 }
 
 /** One `log://log` event (tauri-plugin-log's Webview target): level 1 trace … 5 error. */
-export type LogRecord = { level: number; message: string };
+type LogRecord = { level: number; message: string };
 
 export const api = {
   vaultStatus: () => invoke<VaultStatus>("vault_status"),
@@ -118,38 +163,75 @@ export const api = {
   splashDone: () => invoke<void>("splash_done"),
 
   accountsList: () => invoke<AccountSummary[]>("accounts_list"),
+  /** [account id, Robux] as each info panel last read it; nothing is asked of Roblox. */
+  accountsRobux: () => invoke<[number, number][]>("accounts_robux"),
   accountAddCookie: (cookie: string) => invoke<AccountSummary>("account_add_cookie", { cookie }),
   /** Every .ROBLOSECURITY in the text, added one by one (slow: each is checked with Roblox). */
   accountsImportCookies: (text: string) => invoke<ImportReport>("accounts_import_cookies", { text }),
   /** Roblox Account Manager's AccountData.json (plain or DPAPI, not password-locked). */
   accountsImportRam: (path: string) => invoke<ImportReport>("accounts_import_ram", { path }),
-  /** Opens the Roblox sign-in window; resolves once the cookie is captured. */
-  accountAddLogin: () => invoke<AccountSummary>("account_add_login"),
+  /** Roblox's sign-in window, resolving once the cookie is captured; `fill` goes into its form (a bulk `user:pass` line), never stored. */
+  accountAddLogin: (fill?: { username: string; password: string }) => invoke<AccountSummary>("account_add_login", { username: fill?.username, password: fill?.password }),
+  /** Closes the open sign-in window: its accountAddLogin fails "cancelled". */
+  accountLoginCancel: () => invoke<void>("account_login_cancel"),
   accountUpdate: (id: number, patch: AccountPatch) => invoke<AccountSummary>("account_update", { id, patch }),
   accountsReorder: (ids: number[]) => invoke<void>("accounts_reorder", { ids }),
   accountsRemove: (ids: number[]) => invoke<void>("accounts_remove", { ids }),
   accountsValidate: (ids?: number[]) => invoke<AccountSummary[]>("accounts_validate", { ids }),
+  accountsBefriend: (ids: number[]) => invoke<FriendReport>("accounts_befriend", { ids }),
   /** Master mode needs the password; DPAPI mode shows Windows Hello. */
   accountRevealCookie: (id: number, password?: string) => invoke<string>("account_reveal_cookie", { id, password }),
   accountCopyCookie: (id: number, password?: string) => invoke<void>("account_copy_cookie", { id, password }),
+  /** `username:cookie` lines in a file in RoALT's folder, selected in Explorer; all accounts with no ids. */
+  accountsExportCookies: (accountIds?: number[], password?: string) => invoke<CookieExport>("accounts_export_cookies", { accountIds, password }),
+  cookieExportDelete: () => invoke<number>("cookie_export_delete"),
+  cookieExportReveal: () => invoke<void>("cookie_export_reveal"),
 
   /** Cached for settings.cacheMinutes unless refresh. Parts Roblox didn't answer are null and named in `unavailable`. */
   accountInfo: (id: number, refresh = false) => invoke<AccountInfo>("account_info", { id, refresh }),
+  /** The account's limiteds as last counted (null: never); `refresh` counts them now (slow). */
+  accountValue: (id: number, refresh = false) => invoke<AccountValue | null>("account_value", { id, refresh }),
   /** Avatar URLs for all accounts (cached 6 h); accounts without one are missing from the list. */
-  accountsHeadshots: (refresh = false) => invoke<Headshot[]>("accounts_headshots", { refresh }),
+  accountsHeadshots: () => invoke<Headshot[]>("accounts_headshots"),
   /** Presence of these accounts, each asked with its own cookie (accounts without a valid cookie are left out). */
   accountsPresence: (ids: number[]) => invoke<AccountPresence[]>("accounts_presence", { ids }),
-  /** Opens roblox.com signed in as the account in its own window. */
-  accountOpenSession: (id: number) => invoke<void>("account_open_session", { id }),
 
   /** Local, instant: what pasted text points at. */
   targetParse: (input: string) => invoke<ParsedInput>("target_parse", { input }),
+  /** Browse › Limiteds: every limited Rolimons lists; null while Rolimons values are off. */
+  marketItems: () => invoke<Market | null>("market_items"),
+  /** Item pictures (asset id, image URL), at most 200 ids a call. */
+  assetThumbnails: (ids: number[]) => invoke<[number, string][]>("asset_thumbnails", { ids }),
+  /** Whether Clips record, whom, and why not. */
+  clipsStatus: () => invoke<ClipsStatus>("clips_status"),
+  /** Saves the last seconds now; how it went comes as a notice (and `clips://changed`). */
+  clipsSave: () => invoke<void>("clips_save"),
+  /** Saved clips, newest first. */
+  clipsList: () => invoke<ClipItem[]>("clips_list"),
+  /** Its new file name. */
+  clipsRename: (name: string, to: string) => invoke<string>("clips_rename", { name, to }),
+  /** To the Recycle Bin. */
+  clipsDelete: (name: string) => invoke<void>("clips_delete", { name }),
+  clipsReveal: (name: string) => invoke<void>("clips_reveal", { name }),
+  clipsOpenFolder: () => invoke<void>("clips_open_folder"),
+  clipsFolder: () => invoke<string>("clips_folder"),
+  /** Every mod (top first) and how the last launch with mods on went. */
+  modsList: () => invoke<ModsList>("mods_list"),
+  /** Imports the zip at `path` as a new mod, on and at the top. */
+  modsImport: (path: string) => invoke<ModImported>("mods_import", { path }),
+  modsExport: (id: string, path: string) => invoke<void>("mods_export", { id, path }),
+  modsExportName: (id: string) => invoke<string>("mods_export_name", { id }),
+  modsRemove: (id: string) => invoke<void>("mods_remove", { id }),
+  modsSetOn: (id: string, on: boolean) => invoke<void>("mods_set_on", { id, on }),
+  /** The new order, top first: the top mod wins a file two mods change. */
+  modsReorder: (ids: string[]) => invoke<void>("mods_reorder", { ids }),
+  /** The game or server of the `roalt://` link RoALT was last opened with, once. */
+  takePendingLink: () => invoke<LaunchTarget | null>("take_pending_link"),
   /** A Roblox username (current or previous) to its user. */
   userLookup: (name: string) => invoke<UserRef>("user_lookup", { name }),
-  /** Starts the Roblox client as this account. */
-  /** `fpsCap`: this launch's own, instead of the account's and the default; 0 or none: those. */
-  launch: (accountId: number, target: LaunchTarget, favouriteId?: number, fpsCap?: number | null) =>
-    invoke<LaunchInfo>("launch", { accountId, target, favouriteId, fpsCap: fpsCap || null }),
+  /** Starts the Roblox client as this account. `fpsCap`: this launch's own, instead of the account's and the default; 0 or none: those. */
+  launch: (accountId: number, target: LaunchTarget, fpsCap?: number | null) =>
+    invoke<LaunchInfo>("launch", { accountId, target, fpsCap: fpsCap || null }),
   favouritesList: () => invoke<Favourite[]>("favourites_list"),
   favouriteSave: (input: FavouriteInput) => invoke<Favourite>("favourite_save", { input }),
   favouriteRemove: (id: number) => invoke<void>("favourite_remove", { id }),
@@ -160,16 +242,32 @@ export const api = {
   instancesList: () => invoke<Instance[]>("instances_list"),
   /** Graceful unless `force`; not counted as an unexpected exit. */
   instanceClose: (id: string, force: boolean) => invoke<void>("instance_close", { id, force }),
-  instancesCloseAll: (force: boolean) => invoke<void>("instances_close_all", { force }),
+  /** Browse: www.roblox.com/`path` as the account, at `rect` (the main window's CSS pixels). */
+  browseOpen: (accountId: number, path: string, rect: PaneRect) => invoke<void>("browse_open", { accountId, path, rect }),
+  browseBounds: (rect: PaneRect, shown: boolean) => invoke<void>("browse_bounds", { rect, shown }),
+  browseNav: (action: BrowseNav) => invoke<void>("browse_nav", { action }),
+  browseClose: () => invoke<void>("browse_close"),
+  /** Roblox's Charts lists with icons (Browse's Popular; cached). */
+  gamesPopular: () => invoke<GameSort[]>("games_popular"),
+  /** Every account's time in each place, the most played first. */
+  playtimeList: () => invoke<PlaytimeRow[]>("playtime_list"),
+  /** Closes a playing account's client and launches it again into `target` (the smallest other
+   * server when that is the game it is in). `fpsCap` as `launch`'s; none: the old client's. */
+  instanceMove: (id: string, target: LaunchTarget, fpsCap?: number | null) =>
+    invoke<LaunchInfo>("instance_move", { id, target, fpsCap: fpsCap || null }),
+  /** Graceful, like `instanceClose` without `force`. */
+  instancesCloseAll: () => invoke<void>("instances_close_all"),
   instancesClearEnded: () => invoke<void>("instances_clear_ended"),
   /** CPU cap, efficiency mode, trim interval and cores for one running client (they win over adaptive ones). */
   instanceSetLimits: (id: string, limits: Limits) => invoke<void>("instance_set_limits", { id, limits }),
-  /** Pages the client's working set out now. */
-  instanceTrim: (id: string) => invoke<void>("instance_trim", { id }),
+  /** Trims the client: its Memory column before and after, in MB. */
+  instanceTrim: (id: string) => invoke<[number, number]>("instance_trim", { id }),
   /** Opts one running client in or out of anti-AFK. */
   instanceSetAntiAfk: (id: string, enabled: boolean) => invoke<void>("instance_set_anti_afk", { id, enabled }),
   /** The client's preview at most maxW wide: always a 24-byte header, then RGBA unless its picture number is `known` or it has no picture (`window::Preview::to_bytes`). */
   instanceThumbnail: (id: string, maxW: number, known: number) => invoke<ArrayBuffer>("instance_thumbnail", { id, maxW, known }),
+  /** Where live pictures would get Windows' yellow frame: Windows draws each client in `places` over its card, the rest go. */
+  instanceThumbs: (places: ThumbPlace[]) => invoke<void>("instance_thumbs", { places }),
   /** Brings the client's window to the front, minimizes or restores it. */
   instanceShow: (id: string, what: WindowShow) => invoke<void>("instance_show", { id, what }),
   /** Minimizes or restores every running client's window. */
@@ -178,6 +276,10 @@ export const api = {
   instanceMicro: (id: string, on: boolean, size?: [number, number]) => invoke<[number, number]>("instance_micro", { id, on, size }),
   /** Lays every running client that isn't hidden or minimized out in a grid on RoALT's monitor; how many it laid out. */
   instancesTile: (micro: boolean) => invoke<number>("instances_tile", { micro }),
+  /** Draws the window layout's spots for launching these accounts (in order) over RoALT's monitor for a few seconds. */
+  layoutPreview: (accountIds: number[], running: string) => invoke<void>("layout_preview", { accountIds, running }),
+  /** Takes the layout preview off the screen before its time. */
+  layoutPreviewStop: () => invoke<void>("layout_preview_stop"),
   /** CPU, memory and IO of each running client (sampled at most every 2 s). */
   instancesMetrics:() => invoke<ClientMetrics[]>("instances_metrics"),
   /** How busy the whole PC is (sampled at most every 2 s); null if Windows doesn't say. */
@@ -195,7 +297,7 @@ export const api = {
   /** Takes the lock from the running Roblox by closing its singleton event in each client (ask first). */
   multiInstanceTakeOver: () => invoke<MultiInstanceStatus>("multi_instance_take_over"),
   /** Every Roblox client, tracked or not; then takes the multi-instance lock if enabled. */
-  robloxCloseAll: (force: boolean) => invoke<MultiInstanceStatus>("roblox_close_all", { force }),
+  robloxCloseAll: () => invoke<MultiInstanceStatus>("roblox_close_all"),
   /** Panic button: cancels the batch, no rejoins or restarts, terminates every Roblox client. */
   panicKill: () => invoke<MultiInstanceStatus>("panic_kill"),
   /** Clients that crashed, were disconnected or hung, newest first (the last 200). */
@@ -204,6 +306,8 @@ export const api = {
   diagnosticsText: () => invoke<string>("diagnostics_text"),
   diagnosticsSave: (path: string) => invoke<void>("diagnostics_save", { path }),
   serverHistory: (accountId: number) => invoke<ServerVisit[]>("server_history", { accountId }),
+  /** Every account's servers, newest first, each server once. */
+  serverRecent: () => invoke<PlayedServer[]>("server_history_recent"),
   /** Opens that crash's client log in the default app. */
   crashOpenLog: (id: number) => invoke<void>("crash_open_log", { id }),
 
@@ -221,30 +325,87 @@ export const api = {
   serversList: (placeId: number, order: ServerOrder, excludeFull: boolean, limit: 10 | 25 | 50 | 100, cursor?: string, accountId?: number) =>
     invoke<ServerPage>("servers_list", { placeId, order, excludeFull, limit, cursor, accountId }),
   gameInfo: (placeId: number) => invoke<GameInfo>("game_info", { placeId }),
+  gameStats: (universeId: number) => invoke<GameStats>("game_stats", { universeId }),
+  /** Shows the profile card on Browse's page (null: takes it away). */
+  browseCard: (card: PageCard | null) => invoke<void>("browse_card", { card }),
+  /** A Roblox player's profile, asked as `accountId` (the Browse account). */
+  playerStats: (accountId: number, userId: number) => invoke<PlayerStats>("player_stats", { accountId, userId }),
+  /** A player's limiteds: a recent count kept, else counted now (slow for big inventories). */
+  playerValue: (accountId: number, userId: number, refresh = false) => invoke<PlayerValue>("player_value", { accountId, userId, refresh }),
   /** The place a target leads to (universes, share links with the account's cookie). */
   targetPlace: (target: LaunchTarget, accountId?: number) => invoke<number>("target_place", { target, accountId }),
   privateServersList: (placeId: number, accountId: number, cursor?: string) =>
     invoke<PrivateServerPage>("private_servers_list", { placeId, accountId, cursor }),
+  /** As the owner's account (`accountId`); another account gets "Only the owner's account can change this". */
+  privateServerGet: (accountId: number, vipServerId: number) =>
+    invoke<PrivateServerSettings>("private_server_get", { accountId, vipServerId }),
+  privateServerUpdate: (accountId: number, vipServerId: number, patch: PrivateServerPatch) =>
+    invoke<PrivateServerSettings>("private_server_update", { accountId, vipServerId, patch }),
+  /** Auto-renew on spends `price` Robux a month: confirm first. `price` comes from privateServerGet. */
+  privateServerRenew: (accountId: number, vipServerId: number, on: boolean, price: number) =>
+    invoke<PrivateServerSettings>("private_server_renew", { accountId, vipServerId, on, price }),
+  /** Spends Robux: confirm first. One idempotencyKey per buy dialog. */
+  privateServerBuy: (buy: PrivateServerBuy) => invoke<void>("private_server_buy", { buy }),
+
+  /** The account's saved outfits and a picture of what it wears now. */
+  outfitsList: (accountId: number) => invoke<Outfits>("outfits_list", { accountId }),
+  /** `to` wears `from`'s outfit (the same account to wear its own). Answers the names of the items `to` could not wear. */
+  outfitWear: (from: number, outfitId: number, to: number) => invoke<string[]>("outfit_wear", { from, outfitId, to }),
+  /** Saves what the account wears now as a new outfit. */
+  outfitSave: (accountId: number, name: string) => invoke<void>("outfit_save", { accountId, name }),
+  outfitRename: (accountId: number, outfitId: number, name: string) => invoke<void>("outfit_rename", { accountId, outfitId, name }),
+  outfitDelete: (accountId: number, outfitId: number) => invoke<void>("outfit_delete", { accountId, outfitId }),
+
+  /** The account's newest 100 trades of one kind. */
+  tradesList: (accountId: number, kind: TradeKind) => invoke<TradeRow[]>("trades_list", { accountId, kind }),
+  /** Both sides of a trade, as the account sees them. Trade ids are strings: they can pass 2^53. */
+  tradeDetails: (accountId: number, tradeId: string) => invoke<TradeDetail>("trade_details", { accountId, tradeId }),
+  /** Can't be undone: confirm first. Refused while purchases are locked. */
+  tradeAccept: (accountId: number, tradeId: string) => invoke<void>("trade_accept", { accountId, tradeId }),
+  /** Declines an inbound trade, or takes back an outbound one. */
+  tradeDecline: (accountId: number, tradeId: string) => invoke<void>("trade_decline", { accountId, tradeId }),
+  friendRequestsList: (accountId: number) => invoke<FriendRequest[]>("friend_requests_list", { accountId }),
+  friendRequestAnswer: (accountId: number, userId: number, accept: boolean) => invoke<void>("friend_request_answer", { accountId, userId, accept }),
+  friendRequestsDeclineAll: (accountId: number) => invoke<void>("friend_requests_decline_all", { accountId }),
+  robuxTransactions: (accountId: number, kind: RobuxKind) => invoke<RobuxTransaction[]>("robux_transactions", { accountId, kind }),
+  robuxTotals: (accountId: number) => invoke<RobuxTotals>("robux_totals", { accountId }),
+  privateServersOwned: (accountId: number) => invoke<OwnedPrivateServer[]>("private_servers_owned", { accountId }),
+  playtimeDays: () => invoke<PlaytimeDay[]>("playtime_days"),
+  crashesExport: (path: string) => invoke<void>("crashes_export", { path }),
+  playtimeExport: (path: string) => invoke<void>("playtime_export", { path }),
 
   groupsList: () => invoke<Group[]>("groups_list"),
   groupSave: (input: GroupInput) => invoke<Group>("group_save", { input }),
   groupRemove: (id: number) => invoke<void>("group_remove", { id }),
 
-  /** Master mode needs the master password (currentPassword); DPAPI mode shows Windows Hello. */
   /** The current performance settings as a profile (JSON text). */
   performanceProfile: (previewFps: number) => invoke<string>("performance_profile", { previewFps }),
   performanceExport: (path: string, previewFps: number) => invoke<void>("performance_export", { path, previewFps }),
   /** A profile file or text, checked; nothing is saved until it goes through settingsSet. */
   performanceRead: (path: string) => invoke<Profile>("performance_read", { path }),
   performanceParse: (text: string) => invoke<Profile>("performance_parse", { text }),
-  backupExport: (path: string, password: string, currentPassword?: string, accountIds?: number[]) =>
-    invoke<number>("backup_export", { path, password, currentPassword, accountIds }),
-  backupImport: (path: string, password: string, onConflict: ConflictPolicy) =>
-    invoke<ImportReport>("backup_import", { path, password, onConflict }),
+  /** Watches the clients in a game for about 22 s, then what to turn on for `target` clients like them (default: as many). */
+  performanceBenchmark: (target?: number) => invoke<Benchmark>("performance_benchmark", { target }),
+  /** This PC's specs and about how many clients each preset fits, by specs alone (nothing launched). */
+  performanceSpecs: () => invoke<Specs>("performance_specs"),
+  /** Every account, group and favourite. Master mode needs the master password (currentPassword); DPAPI mode shows Windows Hello. */
+  backupExport: (path: string, password: string, currentPassword?: string) =>
+    invoke<number>("backup_export", { path, password, currentPassword }),
+  /** `settings`: also restore the backup's settings and Discord webhook over this PC's. */
+  backupImport: (path: string, password: string, onConflict: ConflictPolicy, settings: boolean) =>
+    invoke<ImportReport>("backup_import", { path, password, onConflict, settings }),
 
   robloxClient: () => invoke<RobloxClient>("roblox_client"),
   /** Downloads Roblox's installer, checks it is signed by Roblox Corporation, runs it; progress on onRobloxInstall. */
   robloxInstall: () => invoke<RobloxClient>("roblox_install"),
+  /** Roblox, the bootstrappers installed and RoALT: who can open Roblox's links, and who does. */
+  robloxLaunchers: () => invoke<RobloxLauncher[]>("roblox_launchers"),
+  /** Makes one of `robloxLaunchers` open Roblox's links (RoALT launches through it); the list again. */
+  robloxLauncherSet: (path: string) => invoke<RobloxLauncher[]>("roblox_launcher_set", { path }),
+  news: () => invoke<News>("news"),
+  /** RoALT's sponsor and supporters, from roalt.dev; empty when it can't be read. */
+  extras: () => invoke<Extras>("extras"),
+  onlinePing: () => invoke<Online | null>("online_ping"),
   /** RoALT's version and the newer release the last check found (no network). */
   selfUpdateStatus: () => invoke<AppUpdate>("self_update_status"),
   /** Asks GitHub for a newer RoALT now. */
@@ -264,6 +425,7 @@ export const api = {
   backgroundGet: () => invoke<ArrayBuffer>("background_get"),
   /** Deletes Roblox client logs over a day old or 50 MB, never a running client's. */
   logsClean: () => invoke<LogsCleaned>("logs_clean"),
+  browserDataReset: () => invoke<boolean>("browser_data_reset"),
   /** Windows shuts down in `inSecs` or at `atMs` (1 min to 7 days); the deadline (Unix ms). */
   shutdownSchedule: (when: { atMs?: number; inSecs?: number }, closeClients: boolean) =>
     invoke<number | null>("shutdown_schedule", { atMs: when.atMs ?? null, inSecs: when.inSecs ?? null, closeClients }),
@@ -283,6 +445,14 @@ export const events = {
   onVaultLocked: (f: () => void): Promise<UnlistenFn> => listen("vault://locked", f),
   onInstancesChanged: (f: () => void): Promise<UnlistenFn> => listen("instances://changed", f),
   onNotice: (f: (n: Notice) => void): Promise<UnlistenFn> => listen<Notice>("app://notice", (e) => f(e.payload)),
+  /** The backend changed a setting by itself (the tray's Anti-AFK tick). */
+  onSettingsChanged: (f: () => void): Promise<UnlistenFn> => listen("settings://changed", f),
+  /** The tray's Play all again was picked. */
+  onPlayAgain: (f: () => void): Promise<UnlistenFn> => listen("app://play-again", f),
+  /** A clip was saved. */
+  onClipsChanged: (f: () => void): Promise<UnlistenFn> => listen("clips://changed", f),
+  /** RoALT was opened with a `roalt://` link: `api.takePendingLink` has it. */
+  onOpenLink: (f: () => void): Promise<UnlistenFn> => listen("app://open-link", f),
   onLog: (f: (r: LogRecord) => void): Promise<UnlistenFn> => listen<LogRecord>("log://log", (e) => f(e.payload)),
   onBulkProgress: (f: (p: BulkProgress) => void): Promise<UnlistenFn> => listen<BulkProgress>("bulk://progress", (e) => f(e.payload)),
   /** The client or its versions changed (version check at start and every 30 min, an install). */

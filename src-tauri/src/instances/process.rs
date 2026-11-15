@@ -7,13 +7,13 @@
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
-use windows::Win32::Foundation::{E_ACCESSDENIED, FILETIME, HANDLE, HWND, LPARAM, WAIT_TIMEOUT, WPARAM};
+use windows::Win32::Foundation::{E_ACCESSDENIED, FILETIME, HANDLE, HWND, LPARAM, WAIT_OBJECT_0, WAIT_TIMEOUT, WPARAM};
 use windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS,
 };
 use windows::Win32::System::Threading::{
-    GetProcessTimes, OpenProcess, PROCESS_ACCESS_RIGHTS, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE,
-    PROCESS_TERMINATE, TerminateProcess, WaitForSingleObject,
+    GetProcessTimes, OpenProcess, PROCESS_ACCESS_RIGHTS, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+    PROCESS_SYNCHRONIZE, PROCESS_TERMINATE, QueryFullProcessImageNameW, TerminateProcess, WaitForSingleObject,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     EnumWindows, GW_OWNER, GetForegroundWindow, GetWindow, GetWindowThreadProcessId, IsHungAppWindow, IsIconic, IsWindowVisible,
@@ -40,9 +40,10 @@ pub fn roblox_processes() -> Vec<ProcInfo> {
     named(CLIENT_EXE)
 }
 
-/// Whether Roblox's own installer runs: it updates the client, then starts it again.
+/// Whether Roblox's own installer (or its launcher, which can update too) runs: it updates the
+/// client, then starts it again.
 pub fn installer_running() -> bool {
-    !named(INSTALLER_EXE).is_empty()
+    !named(INSTALLER_EXE).is_empty() || !named("RobloxPlayerLauncher.exe").is_empty()
 }
 
 /// Running processes whose executable is `exe`.
@@ -76,18 +77,62 @@ fn named(exe: &str) -> Vec<ProcInfo> {
     out
 }
 
-/// Start time of a running process, `None` if it is gone.
+/// Start time of a running process, `None` if it is gone or can't be read (`unreadable_client`).
 pub fn start_time(pid: u32) -> Option<u64> {
     started(*open(pid, PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE)?)
+}
+
+/// The executable a running process was started from; None if it is gone or can't be read.
+pub fn exe_path(pid: u32) -> Option<std::path::PathBuf> {
+    let h = open(pid, PROCESS_QUERY_LIMITED_INFORMATION)?;
+    let mut buf = [0u16; 1024];
+    let mut len = buf.len() as u32;
+    // SAFETY: `h` is a live handle with PROCESS_QUERY_LIMITED_INFORMATION; `buf` holds `len` u16s.
+    unsafe { QueryFullProcessImageNameW(*h, PROCESS_NAME_WIN32, windows::core::PWSTR(buf.as_mut_ptr()), &mut len) }.ok()?;
+    Some(String::from_utf16_lossy(&buf[..len as usize]).into())
+}
+
+/// `start_time` said None, yet this is a Roblox client that hasn't exited: Windows still lists
+/// it (no handle needed) and it isn't signalled. Anything else with its pid doesn't count.
+pub fn unreadable_client(pid: u32) -> bool {
+    // SAFETY: `h` is a live handle with PROCESS_SYNCHRONIZE.
+    if open(pid, PROCESS_SYNCHRONIZE).is_some_and(|h| unsafe { WaitForSingleObject(*h, 0) } == WAIT_OBJECT_0) {
+        return false;
+    }
+    exe_name(pid).is_some_and(|n| n.eq_ignore_ascii_case(CLIENT_EXE))
+}
+
+/// The executable name the process list has for `pid` (no handle needed); None if not listed.
+pub fn exe_name(pid: u32) -> Option<String> {
+    // SAFETY: as in `named`.
+    unsafe {
+        let snap = Owned::new(CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0).ok()?);
+        let mut e = PROCESSENTRY32W { dwSize: size_of::<PROCESSENTRY32W>() as u32, ..Default::default() };
+        let mut more = Process32FirstW(*snap, &mut e).is_ok();
+        while more {
+            if e.th32ProcessID == pid {
+                let len = e.szExeFile.iter().position(|&c| c == 0).unwrap_or(e.szExeFile.len());
+                return Some(String::from_utf16_lossy(&e.szExeFile[..len]));
+            }
+            more = Process32NextW(*snap, &mut e).is_ok();
+        }
+    }
+    None
 }
 
 /// Asks the client to close: WM_CLOSE to its top-level windows, again after ~400 ms (Roblox may
 /// show a leave prompt), then TerminateProcess if it is still alive after `grace`. `force`
 /// terminates at once. `expected` is the start time the process was seen with; another
-/// process now holding `pid` is left alone. Already gone → Ok.
+/// process now holding `pid` is left alone. Already gone → Ok. A client that can't be read is
+/// only asked, and it stays an error: it may not close.
 pub fn close(pid: u32, expected: Option<u64>, force: bool, grace: Duration) -> Result<()> {
+    let seen = start_time(pid);
+    if seen.is_none() && unreadable_client(pid) {
+        post_close(pid);
+        return Err(AppError::Internal(tr!("Could not close Roblox (process {pid}): {why}", pid = pid, why = tr!("access denied"))));
+    }
     // Pid + start time, so a pid already reused, or reused while we wait, is never touched.
-    let Some(t0) = start_time(pid).filter(|t| expected.is_none_or(|e| e == *t)) else { return Ok(()) };
+    let Some(t0) = seen.filter(|t| expected.is_none_or(|e| e == *t)) else { return Ok(()) };
     let alive = || start_time(pid) == Some(t0);
     if !force {
         let deadline = Instant::now() + grace;
@@ -243,7 +288,11 @@ pub(super) fn started(h: HANDLE) -> Option<u64> {
     // SAFETY: `h` is a live handle with PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE; the out
     // pointers are locals.
     unsafe {
-        if WaitForSingleObject(h, 0) != WAIT_TIMEOUT {
+        let wait = WaitForSingleObject(h, 0);
+        if wait != WAIT_TIMEOUT {
+            if wait != WAIT_OBJECT_0 {
+                log::debug!("process wait failed: {wait:?}");
+            }
             return None;
         }
         GetProcessTimes(h, &mut created, &mut exited, &mut kernel, &mut user)

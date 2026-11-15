@@ -13,8 +13,8 @@ impl Updater {
         false
     }
 }
-pub async fn launch_client(_: &App) -> Result<(client::ClientExe, bool)> {
-    Ok((client::find()?, true))
+pub async fn launch_client(_: &App) -> Result<(client::ClientExe, bool, bool)> {
+    Ok((client::find()?, true, false))
 }
 pub async fn update_hold(_: &App, _: usize) -> Option<String> {
     None
@@ -47,3 +47,6 @@ pub fn is_version(s: &str) -> bool {
                 .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
     })
 }
+
+pub fn note_started(_: &App, _: &client::ClientExe, _: bool, _:u32, _:u64) {}
+pub(crate) async fn blocking<T:Send+'static>(f:impl FnOnce()->Result<T>+Send+'static)->Result<T>{tauri::async_runtime::spawn_blocking(f).await.map_err(|e|AppError::Internal(e.to_string()))?}

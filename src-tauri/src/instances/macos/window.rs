@@ -13,15 +13,15 @@ pub enum Show {
 }
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
-struct Rect {
+struct NativeRect {
     x: i32,
     y: i32,
     w: i32,
     h: i32,
 }
 unsafe extern "C" {
-    fn ro_rect(pid: i32, start: u64, rect: *mut Rect, set: i32) -> i32;
-    fn ro_workarea(rect: *mut Rect) -> i32;
+    fn ro_rect(pid: i32, start: u64, rect: *mut NativeRect, set: i32) -> i32;
+    fn ro_workarea(rect: *mut NativeRect) -> i32;
     fn ro_capture(
         pid: i32,
         start: u64,
@@ -33,7 +33,7 @@ unsafe extern "C" {
     fn ro_capture_free(bytes: *mut u8);
 }
 fn error(code: i32) -> AppError {
-    AppError::Invalid(match code{-2=>"Enable RoALT in System Settings → Privacy & Security → Accessibility, then restart RoALT. If already enabled after an update, remove the old RoALT entry and add the current RoALT.app again.",-3=>"Enable RoALT in System Settings → Privacy & Security → Screen Recording, then restart RoALT to show previews.",_=>"macOS could not access this Roblox window."}.into())
+    AppError::Invalid(match code{1=>"Restore this Roblox window before resizing it.",-2=>"Enable RoALT in System Settings → Privacy & Security → Accessibility, then restart RoALT. If already enabled after an update, remove the old RoALT entry and add the current RoALT.app again.",-3=>"Enable RoALT in System Settings → Privacy & Security → Screen Recording, then restart RoALT to show previews.",_=>"macOS could not access this Roblox window."}.into())
 }
 pub fn thumbnail(pid: u32, start: u64, maxwidth: u32) -> Result<Option<(Thumb, bool)>> {
     let (mut bytes, mut w, mut h) = (std::ptr::null_mut(), 0, 0);
@@ -103,15 +103,15 @@ pub fn minimize_quietly(pid: u32, _: bool) {
         log::debug!("minimize: {e}")
     }
 }
-fn saved() -> &'static std::sync::Mutex<std::collections::HashMap<String, (u32, u64, Rect)>> {
+fn saved() -> &'static std::sync::Mutex<std::collections::HashMap<String, (u32, u64, NativeRect)>> {
     static SAVED: std::sync::OnceLock<
-        std::sync::Mutex<std::collections::HashMap<String, (u32, u64, Rect)>>,
+        std::sync::Mutex<std::collections::HashMap<String, (u32, u64, NativeRect)>>,
     > = std::sync::OnceLock::new();
     SAVED.get_or_init(Default::default)
 }
 pub fn micro(id: &str, pid: u32, on: bool, size: (u32, u32)) -> Result<(u32, u32)> {
     let start = super::process::start_time(pid).ok_or(AppError::NotFound)?;
-    let mut rect = Rect::default();
+    let mut rect = NativeRect::default();
     let code = unsafe { ro_rect(pid as i32, start, &mut rect, 0) };
     if code != 0 {
         return Err(error(code));
@@ -141,13 +141,13 @@ pub fn micro(id: &str, pid: u32, on: bool, size: (u32, u32)) -> Result<(u32, u32
     Ok((rect.w as u32, rect.h as u32))
 }
 pub fn tile(clients: &[(String, u32, u64)], size: Option<(u32, u32)>) -> Result<Vec<String>> {
-    let mut area = Rect::default();
+    let mut area = NativeRect::default();
     if unsafe { ro_workarea(&mut area) } != 0 {
         return Err(error(-1));
     }
     let mut windows = Vec::new();
     for (id, pid, start) in clients {
-        let mut rect = Rect::default();
+        let mut rect = NativeRect::default();
         match unsafe { ro_rect(*pid as i32, *start, &mut rect, 0) } {
             0 => windows.push((id, pid, start, rect)),
             -2 => return Err(error(-2)),
@@ -162,7 +162,7 @@ pub fn tile(clients: &[(String, u32, u64)], size: Option<(u32, u32)>) -> Result<
     let mut tiled = Vec::new();
     let mut saved = saved().lock().unwrap_or_else(|e| e.into_inner());
     for ((id, pid, start, old), (x, y, w, h)) in windows.into_iter().zip(cells) {
-        let mut rect = Rect { x, y, w, h };
+        let mut rect = NativeRect { x, y, w, h };
         if unsafe { ro_rect(*pid as i32, *start, &mut rect, 1) } == 0 {
             saved
                 .entry(id.clone())
@@ -234,7 +234,71 @@ mod tests {
     fn stale_identity_cannot_capture_or_resize() {
         let pid = std::process::id();
         assert!(thumbnail(pid, 1, 320).is_err());
-        let mut r = Rect::default();
+        let mut r = NativeRect::default();
         assert_eq!(unsafe { ro_rect(pid as i32, 1, &mut r, 1) }, -1);
+    }
+}
+
+pub type Rect = (i32, i32, i32, i32);
+pub fn work_area(_: usize) -> Option<Rect> {
+    let mut r = NativeRect::default();
+    (unsafe { ro_workarea(&mut r) } == 0).then_some((r.x, r.y, r.w, r.h))
+}
+pub fn frame_of(_: u32) -> Option<(i32, i32)> {
+    None
+}
+pub fn default_frame() -> (i32, i32) {
+    (0, 32)
+}
+fn small_size(size: (i32, i32), frame: (i32, i32)) -> Option<(u32, u32)> {
+    Some((
+        (size.0 - frame.0).max(1) as u32,
+        (size.1 - frame.1).max(1) as u32,
+    ))
+}
+pub fn place(id: &str, pid: u32, r: Rect, small: Option<(u32, u32)>) -> Result<()> {
+    let start = super::process::start_time(pid).ok_or(AppError::NotFound)?;
+    let mut old = NativeRect::default();
+    let code = unsafe { ro_rect(pid as i32, start, &mut old, 0) };
+    if code != 0 {
+        return Err(error(code));
+    }
+    let mut rect = NativeRect {
+        x: r.0,
+        y: r.1,
+        w: r.2,
+        h: r.3,
+    };
+    let code = unsafe { ro_rect(pid as i32, start, &mut rect, 1) };
+    if code != 0 {
+        return Err(error(code));
+    }
+    let mut saved = saved().lock().unwrap_or_else(|e| e.into_inner());
+    if small.is_some() {
+        saved.entry(id.into()).or_insert((pid, start, old));
+    } else {
+        saved.remove(id);
+    }
+    Ok(())
+}
+pub fn slot_rect(
+    layout: crate::model::WindowLayout,
+    slot: usize,
+    n: usize,
+    area: Rect,
+    frame: (i32, i32),
+    micro: (u32, u32),
+) -> Option<(Rect, Option<(u32, u32)>)> {
+    use crate::model::WindowLayout;
+    match layout {
+        WindowLayout::Off => None,
+        WindowLayout::Fit => {
+            let rect = *grid(n.max(slot + 1), area, None).get(slot)?;
+            Some((rect, small_size((rect.2, rect.3), frame)))
+        }
+        WindowLayout::Tiny => {
+            let cell = (micro.0 as i32 + frame.0, micro.1 as i32 + frame.1);
+            Some((*grid(slot + 1, area, Some(cell)).get(slot)?, Some(micro)))
+        }
     }
 }

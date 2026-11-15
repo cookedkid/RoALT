@@ -1,6 +1,6 @@
 //! Reading Roblox client logs (`%LOCALAPPDATA%\Roblox\logs\*_Player_*_last.log`) to tie a
-//! client to its launch and follow it. Line formats: research multi-instance M10/M11 and
-//! fixtures/multiinstance-log-line-samples.json. Logs can contain the launch ticket
+//! client to its launch and follow it. Line formats: the recorded samples in
+//! docs/research/fixtures/multiinstance-log-line-samples.json. Logs can contain the launch ticket
 //! (`gameinfo:`); lines are parsed and dropped, never stored or logged.
 
 use std::fs::File;
@@ -32,6 +32,8 @@ pub struct LogFacts {
     pub reason: Option<String>,
     /// `challengedByGcs`.
     pub challenged: bool,
+    /// Roblox refused the client's sign-in before the game (`AUTH_FAILED`), until the next join.
+    pub auth_failed: bool,
     /// Closed because another client started (EventWaitResultUpdate then a close request).
     pub replaced: bool,
     /// `EventWaitResultUpdate` seen: another client set the singleton event. A close request
@@ -59,6 +61,10 @@ const DISCONNECTS: [&str; 6] = [
     "Connection closed by server",
 ];
 
+/// The text of Roblox's error 403 dialog. As reported by players, not seen in a log yet: if Roblox
+/// doesn't log it, the client just looks like one still joining.
+const AUTH_FAILED: [&str; 2] = ["encountered during authentication", "Error Code: 403"];
+
 /// The player's own disconnect, not to be rejoined: reason 285 (`DisconnectClientInitiated`:
 /// Leave, research M-logs) or 273 (the same account launched elsewhere: rejoining would kick
 /// that session). Only the message counts, not the timestamp/thread prefix before " [".
@@ -76,8 +82,8 @@ pub fn logs_dir() -> Option<PathBuf> {
  }
 }
 
-/// The `_Player_` log (not `_CrashHandler_`) modified since `since` whose first lines name
-/// this browser tracker id. Reads at most the first ~256 KB of each candidate.
+/// The `_Player_` log (not `_CrashHandler_`) created and modified since `since` whose first lines
+/// name this browser tracker id. Reads at most the first ~256 KB of each candidate.
 pub fn find_log(dir: &Path, browser_tracker_id: i64, since: SystemTime) -> Option<PathBuf> {
     let since = since.checked_sub(SINCE_SLACK).unwrap_or(UNIX_EPOCH);
     let mut candidates: Vec<(SystemTime, PathBuf)> = std::fs::read_dir(dir)
@@ -96,8 +102,12 @@ pub fn find_log(dir: &Path, browser_tracker_id: i64, since: SystemTime) -> Optio
             name.contains("_Player_") && !name.contains("_CrashHandler_")
         })
         .filter_map(|e| {
-            let modified = e.metadata().ok()?.modified().ok()?;
-            (modified >= since).then(|| (modified, e.path()))
+            let m = e.metadata().ok()?;
+            let modified = m.modified().ok()?;
+            // Created before: an earlier client's, still written to. A browser's Play links all
+            // carry the same tracker id.
+            let created = m.created().map_or(true, |c| c >= since);
+            (modified >= since && created).then(|| (modified, e.path()))
         })
         .collect();
     candidates.sort_by_key(|c| std::cmp::Reverse(c.0));
@@ -210,7 +220,7 @@ pub fn problem_of(line: &str) -> Option<&str> {
 }
 
 /// The client's channel and update decision from its tag on, worth a line in RoALT's log: a
-/// foreground update closes every client (research multi-instance M9). Never a URL (pure).
+/// foreground update closes every client. Never a URL (pure).
 fn update_line(line: &str) -> Option<&str> {
     const MARKS: [&str; 3] = ["RobloxChannel has been set to ", "Update check thread: updateRequired ", "Update mode is chosen as "];
     if !MARKS.iter().any(|m| line.contains(m)) {
@@ -225,6 +235,11 @@ pub fn parse_line(line: &str, facts: &mut LogFacts) {
     // join line is an Output line too, so it only counts while no game is running.
     let tag = first_tag(line);
     let joining = line.find(JOINING).filter(|_| matches!(tag, None | Some("FLog::Output")));
+    // Whatever its tag: no game's script runs before the game.
+    if !facts.in_game && AUTH_FAILED.iter().any(|m| line.contains(m)) {
+        facts.auth_failed = true;
+        return;
+    }
     if matches!(tag, Some("FLog::Output" | "FLog::Warning" | "FLog::Error")) && joining.is_none() {
         return;
     }
@@ -243,6 +258,7 @@ pub fn parse_line(line: &str, facts: &mut LogFacts) {
             facts.teleporting = false;
             facts.disconnected = false;
             facts.left = false;
+            facts.auth_failed = false;
             facts.reason = None;
         }
     } else if line.contains("[FLog::Network] Replicator created") || line.contains("[FLog::Network] serverId:") {
@@ -494,6 +510,19 @@ mod tests {
     }
 
     #[test]
+    fn a_refused_sign_in_counts_only_before_the_game() {
+        for l in ["[FLog::Error] An error was encountered during authentication", "[FLog::Output] Error Code: 403"] {
+            assert!(parsed(&[&line(l)]).auth_failed, "{l}");
+        }
+        let mut f = LogFacts { in_game: true, ..LogFacts::default() };
+        parse_line(&line("[FLog::Output] Error Code: 403"), &mut f);
+        assert!(!f.auth_failed, "a game's script can print anything");
+        let mut f = LogFacts { auth_failed: true, ..LogFacts::default() };
+        parse_line(&line("[FLog::Output] ! Joining game 'ffffffff-bbbb-cccc-dddd-eeeeeeeeeeee' place 666 at 1.1.1.1"), &mut f);
+        assert!(!f.auth_failed, "a new join starts over");
+    }
+
+    #[test]
     fn a_new_join_resets_the_session() {
         let s = samples();
         let mut f = parsed(&[&s["joining_game"], &s["replicator_created"], &s["lost_connection"]]);
@@ -539,6 +568,15 @@ mod tests {
         let older = write("0.743.0.7431134_20261023T220010Z_Player_33333_last.log", BTID, Duration::from_secs(30));
         assert_eq!(find_log(&dir, BTID, since), Some(older));
         let newer = write("0.743.0.7431134_20261023T220011Z_Player_44444_last.log", BTID, Duration::from_secs(2));
+        assert_eq!(find_log(&dir, BTID, since), Some(newer.clone()));
+        // Written just now, but created before `since`: an earlier client's with the same id.
+        #[cfg(windows)]
+        use std::os::windows::fs::FileTimesExt;
+        #[cfg(target_os="macos")]
+        use std::os::darwin::fs::FileTimesExt;
+        let earlier = write("0.743.0.7431134_20261023T200000Z_Player_55555_last.log", BTID, Duration::ZERO);
+        let created = std::fs::FileTimes::new().set_created(now - Duration::from_secs(600));
+        File::options().write(true).open(&earlier).unwrap().set_times(created).unwrap();
         assert_eq!(find_log(&dir, BTID, since), Some(newer));
         // Modified a little before `since`: within the slack.
         assert!(find_log(&dir, BTID + 1, now + Duration::from_secs(3)).is_some());

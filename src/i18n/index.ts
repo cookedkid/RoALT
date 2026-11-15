@@ -1,29 +1,14 @@
 // UI translations: one flat JSON catalog per language in ./locales, English (en.json) the
-// reference. `t` reads the current language from module state; Root sets it from
-// Settings.language on every render, so a change re-renders the whole tree in the new language.
+// reference and built in. Every other catalog is its own chunk, loaded when its language is
+// chosen: main.tsx loads the last one before the first render, and Root (`useLang`) follows
+// Settings.language, re-rendering the whole tree once the new catalog is in.
 //
 // Catalog strings use `{name}` placeholders. A plural key has one entry per CLDR category of its
 // language (`key_one`, `key_few`, `key_many`, `key_other`); `t(key, { count })` picks one with
 // Intl.PluralRules. `scripts/check-i18n.mjs` fails the build when a catalog misses a key.
-import { Fragment, createElement, type ReactNode } from "react";
-import ar from "./locales/ar.json";
-import bs from "./locales/bs.json";
-import de from "./locales/de.json";
+import { Fragment, createElement, useEffect, useReducer, type ReactNode } from "react";
+import { readStored, writeStored } from "../ui/stored";
 import en from "./locales/en.json";
-import es from "./locales/es.json";
-import fil from "./locales/fil.json";
-import fr from "./locales/fr.json";
-import id from "./locales/id.json";
-import ja from "./locales/ja.json";
-import ko from "./locales/ko.json";
-import pl from "./locales/pl.json";
-import pt from "./locales/pt.json";
-import ru from "./locales/ru.json";
-import sv from "./locales/sv.json";
-import th from "./locales/th.json";
-import tr from "./locales/tr.json";
-import vi from "./locales/vi.json";
-import zh from "./locales/zh.json";
 
 /** Language codes with their own name, in picker order. */
 export const LANGUAGES = [
@@ -49,7 +34,10 @@ export const LANGUAGES = [
 export type Lang = (typeof LANGUAGES)[number][0];
 
 type Catalog = Record<string, string>;
-const catalogs: Record<Lang, Catalog> = { en, ar, bs, de, es, fil, fr, id, ja, ko, pl, pt, ru, sv, th, tr, vi, zh };
+const loaders = import.meta.glob<Catalog>(["./locales/*.json", "!./locales/en.json"], { import: "default" });
+const catalogs: Partial<Record<Lang, Catalog>> = { en };
+/** The last language shown, so the next start loads it before the first render. */
+const LANG_KEY = "roalt.lang";
 
 type PluralSuffix = "_one" | "_few" | "_many" | "_other";
 type Base<K> = K extends `${infer B}${PluralSuffix}` ? B : K;
@@ -60,7 +48,7 @@ let lang: Lang = "en";
 let rules = new Intl.PluralRules("en");
 let numbers = new Intl.NumberFormat("en");
 
-const isLang = (l: string): l is Lang => l in catalogs;
+const isLang = (l: string): l is Lang => LANGUAGES.some(([code]) => code === l);
 
 /** A Settings.language value ("" follows Windows) to a supported language; else English. */
 export function resolveLang(pref: string | undefined): Lang {
@@ -72,15 +60,45 @@ export function resolveLang(pref: string | undefined): Lang {
   return "en";
 }
 
-/** Switches the UI language; cheap when it is already current. */
-export function setLang(pref: string | undefined) {
-  const next = resolveLang(pref);
+/** Switches to a language whose catalog is loaded; cheap when it is already current. */
+function apply(next: Lang) {
   if (next === lang) return;
   lang = next;
   rules = new Intl.PluralRules(lang);
   numbers = new Intl.NumberFormat(lang);
   document.documentElement.lang = lang;
   document.documentElement.dir = lang === "ar" ? "rtl" : "ltr";
+  // Without storage, the next start shows English until settings load.
+  writeStored(LANG_KEY, lang);
+}
+
+/** Loads `next`'s catalog; false when it couldn't be (the current language stays). */
+async function load(next: Lang) {
+  try {
+    catalogs[next] ??= await loaders[`./locales/${next}.json`]();
+    return true;
+  } catch (e) {
+    console.error(`language ${next} failed to load: ${e}`);
+    return false;
+  }
+}
+
+/** Before the first render: the language shown last, so the start doesn't flash English. */
+export async function loadLastLang() {
+  // No storage: the Windows language.
+  const next = resolveLang(readStored(LANG_KEY) ?? undefined);
+  if (await load(next)) apply(next);
+}
+
+/** Shows Settings.language (`undefined` while settings load: what is shown stays). At once when
+ *  its catalog is loaded; else the current language stays until it is, then the tree re-renders. */
+export function useLang(pref: string | undefined) {
+  const [, loaded] = useReducer((n: number) => n + 1, 0);
+  const next = pref === undefined ? null : resolveLang(pref);
+  if (next && catalogs[next]) apply(next);
+  useEffect(() => {
+    if (next && !catalogs[next]) void load(next).then((ok) => ok && loaded());
+  }, [next]);
 }
 
 export const getLang = () => lang;
@@ -89,17 +107,16 @@ export const isRtl = () => lang === "ar";
 
 // Platform-specific security copy must describe the actual credential provider.
 const macCopy: Partial<Record<Key, string>> = {
+ "settings.browserDataHint": "Mac account windows use temporary browser sessions. Close them to discard their browser data. Saved account cookies stay in the vault.",
+ "settings.selfUpdateHint": "Check this fork’s Apple Silicon Mac releases at startup and every six hours. Installation verifies the download and may require renewed macOS permissions.",
  "performance.graphicsHint": "Applies when RoALT launches an alt. RoALT restores the original graphics file after startup.",
  "performance.hintLight": "Use the graphics overrides below for new clients. Full quality accounts keep their own graphics.",
  "settings.antiAfkEvery": "Press F13 every",
- "settings.antiAfkBackgroundHint": "Background key posting is unavailable on Mac. Anti-AFK briefly brings each due client forward to press F13.",
  "settings.antiAfkHint": "Opt-in: briefly bring each due client forward and press F13 while you are idle, then restore your previous focus. Requires Accessibility and Input Monitoring in System Settings → Privacy & Security; restart RoALT after granting permissions.",
- "settings.antiAfkFocusHint": "At your selected interval, after 5 seconds without keyboard or mouse activity, briefly bring each due client forward and press F13. Restore the previous focus and re-minimize clients that were minimized. Manual input interrupts the round; retry after 30 seconds. Game acceptance is not guaranteed.",
- "dashboard.previewFpsHint": "Window-only captures require Screen Recording permission. Lower rates save CPU. Minimized windows have no live preview.",
+ "performance.previewFpsHint": "Window-only captures require Screen Recording permission. Lower rates save CPU. Minimized windows have no live preview.",
  "launch.limits.cpu": "Cooperative CPU cap (% of whole Mac)",
  "settings.multiHint": "Launch separate macOS Roblox clients directly. Existing clients keep running; no Roblox executable is modified.",
  "settings.protectLoginHint": "New Roblox clients cannot read or write shared native cookie stores. Each client uses its own launch ticket; existing clients are unchanged. This does not isolate all Roblox preferences or logs.",
- "launch.multi.takeOverText": "Enable separate Roblox launches on macOS. Existing clients are left running and unchanged.",
  "settings.efficiency": "Efficiency mode (background priority)",
  "settings.adaptiveBgEco": "Lower background CPU and I/O priority",
  "settings.adaptiveBgHint": "Apply cooperative CPU caps and background scheduling priority while a client is not in front.",
@@ -111,7 +128,6 @@ const macCopy: Partial<Record<Key, string>> = {
  "performance.intro": "Tune FPS, graphics, cooperative CPU caps and background priority. CPU caps use brief pauses and can stutter; percentages refer to the entire Mac, not one core.",
  "settings.minimizeHint": "Minimize after launch. Enable RoALT in System Settings → Privacy & Security → Accessibility first.",
  "home.welcomeLead": "Manage your Roblox accounts on Mac. Three steps to your first game.",
- "home.noLimit": "Launch multiple Roblox clients with multi-instance enabled.",
  "home.step1Text": "Sign in through Roblox’s own page. Your sign-in is encrypted and stays on this Mac.",
  "app.encrypted": "Encrypted on this Mac",
  "app.vaultUnlockedDpapi": "Vault · Keychain · unlocked",
@@ -129,7 +145,7 @@ const macCopy: Partial<Record<Key, string>> = {
 
 function lookup(key: Key, p?: Params): string {
   if (navigator.platform.startsWith("Mac") && macCopy[key]) return macCopy[key]!;
-  const cat = catalogs[lang];
+  const cat = catalogs[lang] ?? (en as Catalog);
   const plural = typeof p?.count === "number" ? `${key}_${rules.select(p.count)}` : null;
   return (plural && (cat[plural] ?? cat[`${key}_other`])) ?? cat[key] ?? (en as Catalog)[key] ?? (en as Catalog)[`${key}_other`] ?? key;
 }
@@ -161,8 +177,19 @@ export function tx(key: Key, p: Record<string, ReactNode | string | number> = {}
   return createElement(Fragment, null, ...out);
 }
 
+// Formatters by language + options: toLocaleString builds a new one per call when given options,
+// and Num formats every animation frame. The key holds the language, so a switch never reuses one.
+const formats = new Map<string, Intl.NumberFormat>();
 /** A number in the current language (grouping, decimals). */
-export const fmtNum = (n: number, o?: Intl.NumberFormatOptions) => n.toLocaleString(lang, o);
+export const fmtNum = (n: number, o?: Intl.NumberFormatOptions) => {
+  if (!o) return n.toLocaleString(lang);
+  const key = lang + JSON.stringify(o);
+  let f = formats.get(key);
+  if (!f) formats.set(key, (f = new Intl.NumberFormat(lang, o)));
+  return f.format(n);
+};
+/** A file's size in MB; a tiny one shows as 0.1 MB, not 0. */
+export const fmtSize = (bytes: number) => t("mods.size", { mb: fmtNum(Math.max(0.1, bytes / 1_048_576), { maximumFractionDigits: bytes < 10_485_760 ? 1 : 0 }) });
 /** A date, time or both in the current language. */
 export const fmtDate = (d: Date | number, o?: Intl.DateTimeFormatOptions) => new Date(d).toLocaleString(lang, o);
 /** A list like "a, b and c" in the current language. */
