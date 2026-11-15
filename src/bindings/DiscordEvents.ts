@@ -17,6 +17,33 @@ breaker: boolean, batchDone: boolean,
  */
 launch: boolean, 
 /**
+ * An account's saved sign-in stopped working, or Roblox refused a client's sign-in, wants a
+ * human check, or the client is signed in as another account.
+ */
+signIn: boolean, 
+/**
+ * A client is held to the memory throttle's CPU cap.
+ */
+throttle: boolean, 
+/**
+ * A newer RoALT is out.
+ */
+update: boolean, 
+/**
+ * A new incoming trade. On: every valid account's incoming trades are read every 10 minutes
+ * (`watch`); off, trades are read only when the Trades view asks.
+ */
+trade: boolean, 
+/**
+ * With clients running: the PC's memory stayed at 90 % or more for a minute, or the clients'
+ * GPU use at 95 % or more for five (`discord::Sustained`).
+ */
+pc: boolean, 
+/**
  * A summary of the running clients every this many minutes (0: off, else 5..=1440).
  */
-statusEveryMin: number, };
+statusEveryMin: number, 
+/**
+ * Who bad alerts mention, as `<@id>` (a user) or `<@&id>` (a role); "" for no one.
+ */
+ping: string, };

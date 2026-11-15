@@ -8,7 +8,8 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 const root = join(import.meta.dirname, "..");
-const LANGS = ["ar", "bs", "de", "es", "fil", "fr", "id", "ja", "ko", "pl", "pt", "ru", "sv", "th", "tr", "vi", "zh"];
+// Every catalog beside en.json: a language added there is checked without being listed here.
+const LANGS = readdirSync(join(root, "src", "i18n", "locales")).map((f) => f.replace(/\.json$/, "")).filter((l) => l !== "en").sort();
 const PLURAL = /_(zero|one|two|few|many|other)$/;
 const read = (p) => JSON.parse(readFileSync(join(root, p), "utf8"));
 const categories = (lang) => [...new Set(Array.from({ length: 200 }, (_, n) => new Intl.PluralRules(lang).select(n)))].sort();

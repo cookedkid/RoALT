@@ -9,7 +9,8 @@
 
 .PARAMETER Dev
   Also keeps a copy as installers\RoALT-Setup-<version>-dev-<yyyyMMdd-HHmm>.exe: one installer
-  per change, earlier ones never overwritten.
+  per change, earlier ones never overwritten. The build never offers a RoALT update (ROALT_DEV,
+  self_update.rs): the published release would replace it with older code.
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File scripts\build-installer.ps1
@@ -55,11 +56,21 @@ if (-not $iscc) { Stop-Build 'Inno Setup 6.6 or newer (ISCC.exe) was not found' 
 
 # The encrypted database (SQLCipher) builds OpenSSL from source, which needs a native Perl:
 # Git's MSYS Perl doesn't work for MSVC builds.
-$perl = @("C:\Strawberry\perl\bin", "$env:ProgramFiles\Strawberry\perl\bin") | Where-Object { Test-Path "$_\perl.exe" } | Select-Object -First 1
+# A portable Strawberry Perl already on PATH counts too.
+$pathPerl = Get-Command perl.exe -All -ErrorAction SilentlyContinue | Where-Object { $_.Source -match 'strawberry' } | Select-Object -First 1
+$perl = @("C:\Strawberry\perl\bin", "$env:ProgramFiles\Strawberry\perl\bin", $(if ($pathPerl) { Split-Path $pathPerl.Source })) |
+    Where-Object { $_ -and (Test-Path "$_\perl.exe") } | Select-Object -First 1
 if (-not $perl) { Stop-Build 'Strawberry Perl was not found (OpenSSL, for the encrypted database, needs it to build)' 'winget install StrawberryPerl.StrawberryPerl, then run this again' }
 $env:PATH = "$perl;$env:PATH"
 
 Write-Host "Building RoALT $version (release)"
+# Set or cleared for every build: a release must never inherit it from the shell.
+$env:ROALT_DEV = if ($Dev) { '1' } else { $null }
+# An indev build's PDB has RoALT's function names (debug info goes in the PDB, not the exe), so a
+# stuck main thread's stack in the log (`watchdog`) can be named. LTO makes them internal: public
+# symbols alone don't name them.
+$env:CARGO_PROFILE_RELEASE_STRIP = if ($Dev) { 'none' } else { $null }
+$env:CARGO_PROFILE_RELEASE_DEBUG = if ($Dev) { 'line-tables-only' } else { $null }
 Push-Location $root
 try {
     if (-not (Test-Path node_modules)) {
@@ -91,6 +102,9 @@ $setup = Get-Item "$root\dist-installer\RoALT-Setup-$version.exe"
 if ($Dev) {
     New-Item -ItemType Directory -Force "$root\installers" | Out-Null
     $setup = Copy-Item $setup.FullName "$root\installers\RoALT-Setup-$version-dev-$(Get-Date -Format 'yyyyMMdd-HHmm').exe" -PassThru
+    # This build's exe and PDB beside it: what names its frames in a watchdog log line.
+    $syms = New-Item -ItemType Directory -Force ($setup.FullName -replace '\.exe$', '-symbols')
+    Copy-Item $exe, ($exe -replace '\.exe$', '.pdb') $syms.FullName
 }
 Write-Host ''
 Write-Host "Installer: $($setup.FullName)" -ForegroundColor Green

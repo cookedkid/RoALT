@@ -1,6 +1,6 @@
 use crate::error::{AppError, Result};
 use std::{process::Command, time::Duration};
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ProcInfo {
     pub pid: u32,
     pub start_time: u64,
@@ -65,7 +65,7 @@ pub fn hung(pid:u32) -> bool {
     let mut known=RESPONSIVE.get_or_init(Default::default).lock().unwrap_or_else(|e|e.into_inner());
     if status==1 {known.insert(pid,start);false} else {status==-1 && known.get(&pid)==Some(&start)}
 }
-pub fn main_window(pid:u32)->Option<(usize,bool)>{(unsafe{super::native::ro_has_window(pid as i32)}!=0).then_some((pid as usize,false))}
+pub fn main_window(pid:u32)->Option<(usize,bool)>{(unsafe{super::native::ro_has_window(pid as i32)}!=0).then_some((pid as usize, minimized(pid)))}
 pub fn foreground_pid()->Option<u32>{let pid=unsafe{super::native::ro_foreground()};(pid>0).then_some(pid as u32)}
 
 #[cfg(test)]
@@ -124,3 +124,8 @@ mod log_tests {
         std::fs::remove_dir_all(dir).unwrap();
     }
 }
+
+/// macOS libproc lookup already checks process identity; unreadable processes are never adopted.
+pub fn unreadable_client(_:u32)->bool {false}
+
+pub fn minimized(pid:u32)->bool {unsafe extern "C" {fn ro_window_minimized(pid:i32)->i32;} unsafe{ro_window_minimized(pid as i32)==1}}

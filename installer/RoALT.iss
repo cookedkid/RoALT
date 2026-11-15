@@ -1,5 +1,5 @@
-; RoALT for Windows: a per-user install of the app, no admin rights. Contract: docs/DESIGN.md
-; ("Releases"). Build it with scripts\build-installer.ps1, which passes the version from
+; RoALT for Windows: a per-user install of the app, no admin rights.
+; Build it with scripts\build-installer.ps1, which passes the version from
 ; src-tauri\tauri.conf.json and where cargo put the release build.
 
 #if Ver < EncodeVer(6,6,0)
@@ -51,6 +51,13 @@ Source: "{#AppExe}"; DestDir: "{app}"; DestName: "RoALT.exe"; Flags: ignoreversi
 [Icons]
 Name: "{autoprograms}\RoALT"; Filename: "{app}\RoALT.exe"
 Name: "{autodesktop}\RoALT"; Filename: "{app}\RoALT.exe"; Tasks: desktopicon
+
+; roalt:// links (a shared game or server) open RoALT on Play with it filled in.
+[Registry]
+Root: HKA; Subkey: "Software\Classes\roalt"; ValueType: string; ValueData: "URL:RoALT link"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\roalt"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\roalt\DefaultIcon"; ValueType: string; ValueData: """{app}\RoALT.exe"",0"
+Root: HKA; Subkey: "Software\Classes\roalt\shell\open\command"; ValueType: string; ValueData: """{app}\RoALT.exe"" ""%1"""
 
 [Run]
 Filename: "{app}\RoALT.exe"; Description: "{cm:LaunchProgram,RoALT}"; Flags: nowait postinstall skipifsilent; Check: WebView2Installed
@@ -111,16 +118,47 @@ begin
     Result := SuppressibleMsgBox('RoALT is running. Close it, then click OK.', mbError, MB_OKCANCEL, IDCANCEL) = IDOK;
 end;
 
+{ RoALT opened Roblox's links (Settings, Default Roblox launcher): give them back to the program it
+  took them from (RoALTBefore), else drop RoALT's so Windows falls back to an all-users Roblox. }
+procedure RestoreRobloxLinks;
+var
+  Schemes: array[0..1] of String;
+  I: Integer;
+  Key, Command, Before: String;
+begin
+  Schemes[0] := 'roblox-player';
+  Schemes[1] := 'roblox';
+  for I := 0 to 1 do begin
+    Key := 'Software\Classes\' + Schemes[I];
+    if RegQueryStringValue(HKCU, Key + '\shell\open\command', '', Command) and
+        (Pos(Lowercase(ExpandConstant('{app}\RoALT.exe')), Lowercase(Command)) > 0) then begin
+      if RegQueryStringValue(HKCU, Key, 'RoALTBefore', Before) then
+        RegWriteStringValue(HKCU, Key + '\shell\open\command', '', Before)
+      else
+        RegDeleteKeyIncludingSubkeys(HKCU, Key);
+    end;
+    RegDeleteValue(HKCU, Key, 'RoALTBefore');
+  end;
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
-  Data: String;
+  Data, Where: String;
 begin
+  if CurUninstallStep = usUninstall then
+    RestoreRobloxLinks;
   Data := ExpandConstant('{localappdata}\RoALT');
   if (CurUninstallStep <> usPostUninstall) or UninstallSilent or not DirExists(Data) then
     exit;
+  Where := 'They are in ' + Data + '.';
+  { Settings > Data moved the database (accounts, cookies) to a folder of the user's choice, named
+    in location.json. It can hold other files too, so it is never deleted here: say so. Not when
+    the database is here after all (moved away and back: location.json stays). }
+  if FileExists(Data + '\location.json') and not FileExists(Data + '\roalt.db') then
+    Where := 'Delete removes only ' + Data + '. You moved RoALT''s data (Settings, Data): the folder you moved it to, with your saved accounts and cookies, is not deleted. Delete that folder yourself.';
   { Keep is the first button, so the default: TaskDialogMsgBox has no default-button flag. }
   if TaskDialogMsgBox('Also delete your RoALT accounts and settings?',
-      'They are in ' + Data + '. Your Roblox accounts themselves are not affected.',
+      Where + ' Your Roblox accounts themselves are not affected.',
       mbConfirmation, MB_YESNO, ['&Keep them' #13#10 'They are there again if you reinstall RoALT.',
       '&Delete them' #13#10 'Saved accounts, cookies, groups and settings. This cannot be undone.'], 0) = IDNO then begin
     DelTree(Data, True, True, True);

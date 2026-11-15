@@ -12,6 +12,11 @@ pub mod client;
 pub mod client;
 pub mod client_settings;
 pub mod flags;
+#[cfg(windows)]
+pub mod links;
+#[cfg(target_os="macos")]
+#[path="macos/links.rs"]
+pub mod links;
 pub mod target;
 #[cfg(windows)]
 pub mod update;
@@ -25,7 +30,7 @@ use uuid::Uuid;
 
 use crate::App;
 use crate::error::{AppError, Result};
-use crate::model::{LaunchInfo, LaunchTarget};
+use crate::model::{FlagScope, LaunchInfo, LaunchTarget};
 use crate::roblox_api::Client;
 use crate::roblox_api::types::{ShareLinkResolution, ShareLinkV2, ShareTarget};
 use crate::vault::{Secret, cookie_aad};
@@ -146,9 +151,9 @@ pub fn launch_args(text: &str) -> Result<Vec<String>> {
     Ok(args)
 }
 
-/// The account's own launch arguments, else the default from settings (`launch_args`).
+/// The account's own launch arguments, else its groups', else the default from settings (`launch_args`).
 fn args_for(s: &App, account_id: i64) -> Result<Vec<String>> {
-    let own = s.db.account(account_id)?.launch_args;
+    let own = s.db.effective(account_id)?.launch_args;
     launch_args(&own.map_or_else(|| s.db.settings().map(|v| v.launch_args), Ok)?)
 }
 
@@ -167,7 +172,7 @@ pub async fn launch(s: &App, account_id: i64, target: &LaunchTarget, fps_cap: Op
     let cookie = account_cookie(s, account_id)?;
     // Before any cookie call: no ticket is fetched when Roblox isn't installed or the arguments
     // are refused.
-    let (exe, production) = update::launch_client(s).await?;
+    let (exe, production, self_updates) = update::launch_client(s).await?;
     #[cfg(target_os = "macos")]
     if !flags::restore_before_launch(&exe.path) {
         return Err(AppError::Invalid("Could not restore the previous Roblox graphics settings. Check write access to Roblox.app and retry.".into()));
@@ -181,26 +186,49 @@ pub async fn launch(s: &App, account_id: i64, target: &LaunchTarget, fps_cap: Op
             false
         });
     let (join, warning) = resolve(&s.api, account_id, &cookie, target).await?;
+    let (join, warning) = through_start_place(&s.api, account_id, &cookie, join, warning).await;
+    // After everything that can refuse the launch, so a refused one builds no copy.
+    // Up to a few seconds of file work (a plain copy where links fail): off the async workers.
+    let (exe, mods_skipped) = tokio::task::block_in_place(|| crate::mods::runtime::prepare(s, exe, self_updates));
+    let warning = match (warning, mods_skipped) {
+        (w, None) => w,
+        (None, Some(m)) => Some(tr!("Modpacks weren't applied: {why}", why = m)),
+        (Some(w), Some(m)) => Some(format!("{w} {}", tr!("Modpacks weren't applied: {why}", why = m))),
+    };
+    // Read again before each call: Roblox can rotate the cookie in any answer, and the old one stops working.
     let assertion = s
         .api
-        .client_assertion(account_id, &cookie)
+        .client_assertion(account_id, &account_cookie(s, account_id)?)
         .await
         .inspect_err(|e| log::warn!("client assertion for account {account_id} failed, ticket fetched without it: {e}"))
         .ok();
-    let ticket = s.api.authentication_ticket(account_id, &cookie, assertion.as_ref()).await?;
+    let ticket = s.api.authentication_ticket(account_id, &account_cookie(s, account_id)?, assertion.as_ref()).await?;
     let (browser_tracker_id, started_at) = (uri::new_browser_tracker_id(), crate::commands::now_ms());
     let place = uri::PlaceLaunch { join: &join, browser_tracker_id, join_attempt_id: Uuid::new_v4() };
-    let settings = s.db.settings()?;
-    let account = s.db.account(account_id)?;
-    let fps = fps_cap.or(account.fps_cap).unwrap_or(settings.fps_cap);
-    let undo = client_settings::apply(&s.db, fps, settings.low_graphics && !account.full_quality);
-    let flags = match (settings.lighter_rendering && !account.full_quality, exe.bootstrapper) {
-        (false, _) => None,
-        (true, true) => {
-            log::info!("lighter rendering skipped for account {account_id}: a bootstrapper manages Roblox's flags");
+    let global = s.db.settings()?;
+    // With its groups' defaults: the cap and Full quality may come from them.
+    let account = s.db.effective(account_id)?;
+    // Its own performance profile's settings over the ones in Settings.
+    let settings = crate::performance::overlay(&global, account.profile.as_ref());
+    // The account's own cap, then its own profile's, then its groups': what is set on the account wins.
+    let own_cap = s.db.account(account_id)?.fps_cap;
+    let fps = fps_cap.or(own_cap).or(account.profile.as_ref().and_then(|p| p.fps_cap)).or(account.fps_cap).unwrap_or(global.fps_cap);
+    // The account Clips record counts as full quality: its clips shouldn't be at the lowest graphics.
+    let full_quality = account.full_quality || settings.clip_account == Some(account_id);
+    let undo = client_settings::apply(&s.db, fps, settings.low_graphics && !full_quality);
+    let lighter = (settings.lighter_rendering && !full_quality).then_some(&settings.render_flags);
+    let custom = match settings.custom_flags_scope {
+        FlagScope::Global => &settings.custom_flags,
+        FlagScope::Account => &account.custom_flags,
+    };
+    let set = flags::launch_set(lighter, custom);
+    let flags = match (set.is_empty(), exe.bootstrapper) {
+        (true, _) => None,
+        (false, true) => {
+            log::info!("FFlags skipped for account {account_id}: a bootstrapper manages Roblox's flags");
             None
         }
-        (true, false) => flags::apply(&exe.path, &settings.render_flags),
+        (false, false) => flags::apply(&exe.path, &set),
     };
     #[cfg(target_os = "macos")]
     if settings.lighter_rendering && !account.full_quality && flags.is_none() {
@@ -246,8 +274,17 @@ pub async fn launch(s: &App, account_id: i64, target: &LaunchTarget, fps_cap: Op
         _ => put_back(undo),
     }
     let (pid, pid_start) = started?;
+    update::note_started(s, &exe, production, pid, pid_start);
 
-    log::info!("launched account {account_id} (pid {pid}, bootstrapper: {}, {} extra argument(s))", exe.bootstrapper, args.len());
+    log::info!(
+        "launched account {account_id} (pid {pid}, bootstrapper: {}, {} extra argument(s), Roblox processes running now: {}, lighter rendering: {}, custom FFlags: {}, full quality: {})",
+        exe.bootstrapper,
+        args.len(),
+        crate::instances::process::roblox_processes().len(),
+        settings.lighter_rendering,
+        custom.len(),
+        account.full_quality,
+    );
     Ok(LaunchInfo {
         account_id,
         pid,
@@ -269,8 +306,8 @@ pub async fn launch_check(s: &App, account_id: i64, target: &LaunchTarget) -> Re
     client::find()?;
     args_for(s, account_id)?;
     resolve(&s.api, account_id, &cookie, target).await?;
-    let assertion = s.api.client_assertion(account_id, &cookie).await.ok();
-    s.api.authentication_ticket(account_id, &cookie, assertion.as_ref()).await.map(drop)
+    let assertion = s.api.client_assertion(account_id, &account_cookie(s, account_id)?).await.ok();
+    s.api.authentication_ticket(account_id, &account_cookie(s, account_id)?, assertion.as_ref()).await.map(drop)
 }
 
 pub(crate) fn account_cookie(s: &App, account_id: i64) -> Result<Secret> {
@@ -346,6 +383,53 @@ async fn share_place(api: &Client, t: &ShareTarget) -> Result<i64> {
         (Some(place_id), _) => Ok(place_id),
         (None, Some(universe_id)) => root_place(api, universe_id).await,
         (None, None) => Err(no_longer_valid()),
+    }
+}
+
+/// Place → its game's start place when Roblox refuses direct joins to it (a sub-place of a game
+/// with "Allow direct access" off), None when it is launched as it is. Learnt once per run.
+// shortcut: per place, not per account; an account refused for its own reason (an unbought paid game) sends the rest through the start place too.
+static START_INSTEAD: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<i64, Option<i64>>>> =
+    std::sync::LazyLock::new(Default::default);
+
+/// A game or server join into a place Roblox won't let anyone straight into (RoALT learns
+/// sub-places from the client's log after the game teleports there) goes to the game's start
+/// place instead, which sends the player on. Any failed lookup launches as asked.
+pub(crate) async fn through_start_place(
+    api: &Client,
+    account_id: i64,
+    cookie: &Secret,
+    join: Join,
+    warning: Option<String>,
+) -> (Join, Option<String>) {
+    let (place_id, launch_data) = match &join {
+        Join::Game { place_id, launch_data } => (*place_id, launch_data.clone()),
+        Join::Job { place_id, .. } => (*place_id, None),
+        _ => return (join, warning),
+    };
+    let Some(start) = start_place_instead(api, account_id, cookie, place_id).await else { return (join, warning) };
+    log::info!("place {place_id} refuses direct joins: account {account_id} goes through start place {start}");
+    let note = tr!("This game only lets players into that place through its start place, so the account starts there.");
+    (Join::Game { place_id: start, launch_data }, Some(warning.map_or_else(|| note.clone(), |w| format!("{w} {note}"))))
+}
+
+async fn start_place_instead(api: &Client, account_id: i64, cookie: &Secret, place_id: i64) -> Option<i64> {
+    let cache = || START_INSTEAD.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some(known) = cache().get(&place_id) {
+        return *known;
+    }
+    let found = async {
+        let Some(universe_id) = api.place_universe(place_id).await? else { return Ok(None) };
+        let start = root_place(api, universe_id).await?;
+        // Only a sub-place is asked about: a start place is launched as it is.
+        Ok::<_, AppError>((start != place_id && api.join_refused(account_id, cookie, place_id).await?).then_some(start))
+    };
+    match found.await {
+        Ok(start) => *cache().entry(place_id).or_insert(start),
+        Err(e) => {
+            log::info!("could not tell whether place {place_id} takes direct joins, launched as asked: {e}");
+            None
+        }
     }
 }
 

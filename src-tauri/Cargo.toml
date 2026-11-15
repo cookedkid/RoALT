@@ -1,8 +1,9 @@
 [package]
 name = "roalt"
-version = "0.9.0"
+version = "1.2.301"
 description = "Local-only Roblox account manager"
 authors = ["inspectsoftware"]
+license = "MIT"
 edition = "2024"
 rust-version = "1.95"
 
@@ -11,7 +12,8 @@ cc = "1"
 tauri-build = { version = "2.7", features = [] }
 
 [dependencies]
-tauri = { version = "2.12", features = ["tray-icon"] }
+# unstable: child webviews (`Window::add_child`), for Roblox inside the RoALT window (`browse`).
+tauri = { version = "2.12", features = ["tray-icon", "unstable"] }
 tauri-plugin-single-instance = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
@@ -34,10 +36,12 @@ zeroize = { version = "1.9", features = ["serde"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 url = "2"
 ts-rs = "12"
+# Mod packs (`mods::pack`): deflate only, read and written. 2.3+ fixed a symlink traversal in `extract`, which RoALT never calls.
+zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = "3"
-chrono = { version = "0.4.45", default-features = false, features = ["std"] }
+chrono = { version = "0.4.45", default-features = false, features = ["std", "clock"] }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62", features = [
@@ -45,9 +49,11 @@ windows = { version = "0.62", features = [
   "Win32_Globalization",
   "Win32_Graphics_Direct3D",
   "Win32_Graphics_Direct3D11",
+  "Win32_Graphics_Dwm",
   "Win32_Graphics_Dxgi",
   "Win32_Graphics_Dxgi_Common",
   "Win32_Graphics_Gdi",
+  "Win32_Media_Audio",
   "Win32_Networking_NetworkListManager",
   "Win32_Security",
   "Win32_Security_Cryptography",
@@ -55,8 +61,14 @@ windows = { version = "0.62", features = [
   "Win32_Security_Cryptography_Sip",
   "Win32_Security_WinTrust",
   "Win32_System_Com",
+  "Win32_System_Com_StructuredStorage",
+  "Win32_System_Variant",
+  "Win32_Media_MediaFoundation",
+  "Win32_System_Diagnostics_Debug",
   "Win32_System_Diagnostics_ToolHelp",
   "Win32_System_JobObjects",
+  # GetThreadContext / RtlVirtualUnwind (the watchdog's stack of a stuck main thread).
+  "Win32_System_Kernel",
   "Win32_System_LibraryLoader",
   "Win32_System_Performance",
   "Win32_System_ProcessStatus",
@@ -67,6 +79,7 @@ windows = { version = "0.62", features = [
   "Win32_System_WinRT_Direct3D11",
   "Win32_System_WinRT_Graphics_Capture",
   "Win32_UI_Accessibility",
+  "Win32_UI_HiDpi",
   "Win32_UI_Input_KeyboardAndMouse",
   "Win32_UI_Shell",
   "Win32_UI_WindowsAndMessaging",
@@ -79,7 +92,16 @@ windows = { version = "0.62", features = [
   "Security_Authorization_AppCapabilityAccess",
 ] }
 windows-future = "0.3"
+# `#[implement]` (clips: the audio activation's completion handler) names this crate.
+windows-core = "0.62"
 webview2-com = "0.39"
+
+# Line numbers in backtraces, no variable info in the debugger: keeps target\debug small.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
 
 [profile.release]
 codegen-units = 1

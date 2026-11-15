@@ -45,6 +45,7 @@ jobs:
           mkdir -p release-macos
           ditto -c -k --sequesterRsrc --keepParent "$app" release-macos/RoALT-macOS-Apple-Silicon.zip
           cp docs/MACOS_PORT.md release-macos/MACOS_README.md
+          cp docs/MACOS_FEATURE_AUDIT.md release-macos/MACOS_FEATURE_AUDIT.md
           cd release-macos
           shasum -a 256 RoALT-macOS-Apple-Silicon.zip > SHA256SUMS.txt
           unzip -t RoALT-macOS-Apple-Silicon.zip
@@ -61,16 +62,15 @@ jobs:
 
           This app is ad-hoc signed, not Developer ID signed or notarized. macOS may require approval to open the app and access Keychain. Grant Accessibility, Screen Recording and Input Monitoring when needed.
 
-          Changes in 0.9.0:
-          - Anti-AFK now brings each due client forward and presses F13 at the selected 1–19 minute interval. It restores the previous focus and re-minimizes previously minimized clients. The center click is removed. Manual input interrupts the round. This follows Windows v0.9.2, but Mac idle-kick prevention still needs a live endurance test.
-          - Clearer crash explanations from matching macOS crash reports: privacy metadata errors, code-signature failures, explicit memory-resource terminations, invalid memory access, and aborts. Unknown causes stay unconfirmed. Delayed reports update the existing crash entry without blocking tracking or auto-restart.
-          - Setting a manual CPU cap no longer drops unrelated automatic background limits. Foreground, loading, and Full quality exemptions remain.
-          - Fixed the blocked Mac releases-page link, GitHub update-check errors, and wrapping of update controls and messages.
-          - Diagnostic exports now mask Mac home-directory usernames.
+          Updated to the Windows v1.2.301 source baseline (5923226), with the native Apple Silicon backend retained.
+          - New upstream interface, themes, settings search, account/group profiles, social tools, custom flags, launch/rejoin fixes and Discord options.
+          - Mac profile-aware CPU planning, corrected minimized-window detection, bounded previews and native window-layout adapters.
+          - Replay recording, modpack application and protected embedded browsing remain unavailable. Clip-library management and modpack-library management are available.
+          - Windows memory trimming, hard quotas, affinity, per-client GPU/audio controls, default-launcher registration and the Windows watchdog are not ported.
+          - Export an encrypted backup before upgrading: the newer database schema is not readable by older builds.
 
-          Validated with automated Mac tests and a packaged Apple Silicon build. Crash explanations require an accessible matching modern .ips report; they are not a guarantee that every crash cause can be identified. No memory-trimming savings are claimed.
+          Read docs/MACOS_FEATURE_AUDIT.md in this release's source for the full command/settings inventory and manual acceptance checklist. Automated build/tests do not establish real Roblox idle prevention or performance savings. Intel Macs are not supported.
 
-          See MACOS_README.md for supported features and limitations. Intel Macs are not supported by this build.
           NOTES
           if gh release view "$tag" >/dev/null 2>&1; then
             echo "Release $tag already exists; leaving its assets unchanged."

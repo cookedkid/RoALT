@@ -1,8 +1,10 @@
 // The Launch composer's state and how a target reads in the UI. Shell owns the draft, so it
 // survives switching views and is dropped with everything else when the vault locks.
 import type { Dispatch, SetStateAction } from "react";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { api, type ErrorPayload, type LaunchTarget, type ParsedInput, type UserRef } from "../../api";
 import { t } from "../../i18n";
+import { toast, toastError } from "../../ui/Toast";
 
 export type Draft = {
   text: string;
@@ -46,9 +48,26 @@ export function targetText(t: LaunchTarget): string {
   }
 }
 
-/** A draft holding a known target (no parse round trip needed). */
+/** A link that opens RoALT on Play with this game or server (roalt.dev hands it to `roalt://`).
+ * Public games and servers only: private servers' codes never go into a link. */
+export function roaltLink(t: LaunchTarget): string | null {
+  if (t.kind === "place") return `https://roalt.dev/play/?place=${t.placeId}`;
+  if (t.kind === "server") return `https://roalt.dev/play/?place=${t.placeId}&job=${t.jobId}`;
+  return null;
+}
+
+/** Copies `roaltLink(target)` and says so. */
+export function copyRoaltLink(target: LaunchTarget) {
+  const link = roaltLink(target);
+  if (link) void writeText(link).then(() => toast(t("share.copied")), toastError);
+}
+
+/** A draft holding a known target (no parse round trip needed). A private server's access code never
+ * shows (the user may never have seen it: the server drawer, a favourite): the field reads its masked
+ * description and the real target waits in `parsed`, so readDraft and resolveTarget work. */
 export function draftFor(target: LaunchTarget, favId: number | null = null, note: string | null = null): Draft {
-  const text = targetText(target);
+  const look = target.kind === "privateAccess" ? describeTarget(target) : null;
+  const text = look ? `${look.kind} · ${look.detail}` : targetText(target);
   return { ...EMPTY_DRAFT, text, parsed: { text, value: { kind: "target", target } }, favId, note };
 }
 
@@ -64,6 +83,9 @@ export function placeOf(s: string): number | null {
   const n = m ? Number(m[1]) : 0;
   return n > 0 && Number.isSafeInteger(n) ? n : null;
 }
+
+/** The place a target names; null for one that names none (a share link, a universe, a followed user). */
+export const targetPlace = (tg: LaunchTarget): number | null => ("placeId" in tg ? tg.placeId : null);
 
 export type Tone = "ok" | "info" | "bad";
 export type Look = { kind: string; detail: string; tone: Tone };

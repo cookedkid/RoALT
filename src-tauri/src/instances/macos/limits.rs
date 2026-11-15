@@ -185,10 +185,11 @@ pub fn trim(_: u32, _: u64) -> Result<()> {
     ))
 }
 /// Restore priority left by a prior manager; governors have their own death guardian.
-pub fn reset_followed(pid: u32, start: u64) {
+pub fn reset_followed(pid: u32, start: u64)->bool {
     if process::start_time(pid) == Some(start) && unsafe { native::ro_background(pid as i32, 0) } != 0 {
         log::warn!("Could not reset background priority for tracked process {pid}");
     }
+    false
 }
 
 pub fn plan_now(s: &crate::App, v: &Settings, clients: &[(String, u32, u64, Limits)], throttled: &[String]) -> Vec<(String, u32, u64, Limits)> {
@@ -197,7 +198,18 @@ pub fn plan_now(s: &crate::App, v: &Settings, clients: &[(String, u32, u64, Limi
         Ok(accounts) => s.tracker.free(&accounts, crate::commands::now_ms()),
         Err(e) => { log::warn!("Could not read quality exemptions: {e}"); clients.iter().map(|c| c.0.clone()).collect() }
     };
-    plan(clients, v, process::foreground_pid(), crate::commands::cores(), throttled, &free)
+    let profiles = match s.db.account_profiles() {Ok(p)=>p,Err(e)=>{log::warn!("Could not read account profiles: {e}");return plan(clients,v,None,crate::commands::cores(),&[],&clients.iter().map(|c|c.0.clone()).collect::<Vec<_>>());}};
+    let front=process::foreground_pid();
+    let fair=v.fair_cap.then(||fair_cap(clients.len() as u32,crate::commands::cores()));
+    clients.iter().map(|(id,pid,start,manual)|{
+      let account=s.tracker.get(id).map(|i|i.account_id);
+      let own=crate::performance::overlay(v,account.and_then(|a|profiles.get(&a)));
+      let exempt=front==Some(*pid)||free.contains(id);
+      let mut l=effective(*manual,exempt,&own,fair);
+      if !exempt&&v.mem_throttle.mb>0&&throttled.contains(id){l.cpu_cap=Some(throttle_cap(l.cpu_cap,v.mem_throttle.cpu_cap));}
+      (id.clone(),*pid,*start,l)
+    }).collect()
+
 }
 
 pub fn plan(clients: &[(String, u32, u64, Limits)], v: &Settings, foreground: Option<u32>, cores: u32, throttled: &[String], free: &[String]) -> Vec<(String, u32, u64, Limits)> {
@@ -213,7 +225,8 @@ pub fn plan(clients: &[(String, u32, u64, Limits)], v: &Settings, foreground: Op
 }
 
 /// Explicit manual limits survive exemptions; automatic limits never interrupt loading/play.
-pub fn effective(manual: Limits, free: bool, v: &Settings, fair: Option<u8>) -> Limits {
+pub fn effective(mut manual: Limits, free: bool, v: &Settings, fair: Option<u8>) -> Limits {
+    manual.affinity=None; manual.trim_every_min=None;
     if free { return manual; }
     let mut l = manual;
     if v.adaptive.enabled {
@@ -292,4 +305,45 @@ mod override_tests {
         assert_eq!(effective(cpu, false, &v, None), cpu);
         assert_eq!(effective(priority, false, &v, None), priority);
     }
+}
+
+impl Limiter {
+ pub fn in_force(&self)->Vec<(String,Limits)>{self.state.lock().unwrap_or_else(|e|e.into_inner()).applied.iter().map(|(id,a)|(id.clone(),Limits{cpu_cap:a.cap,eco:a.eco,..Default::default()})).collect()}
+ pub fn uncapped(&self)->Vec<String>{self.state.lock().unwrap_or_else(|e|e.into_inner()).applied.iter().filter(|(_,a)|a.cap.is_some()&&a.governor.is_none()).map(|(id,_)|id.clone()).collect()}
+ pub fn at_end(&self,id:&str,_:u32)->String {format!("macOS cooperative limits {:?}",self.in_force().into_iter().find(|a|a.0==id).map(|a|a.1))}
+ pub fn mark_old_job(&self,_:u32){}
+ pub fn logged_trim(&self,_:&str,_:u32,_:u64)->Result<(u64,u64)>{Err(AppError::Invalid("Memory trimming is unavailable on macOS.".into()))}
+}
+pub fn played(s:&crate::App,_:&Settings)->Vec<i64>{s.db.full_quality_accounts().unwrap_or_else(|_|s.tracker.list().into_iter().map(|i|i.account_id).collect())}
+
+pub fn spread(i: u32, n: u32, cores: u32) -> Option<u64> {
+    (n.saturating_mul(2) <= cores.clamp(1, 64)).then(|| pin(i, n, cores))
+}
+
+fn pin(i: u32, n: u32, cores: u32) -> u64 {
+    let cores = cores.clamp(1, 64);
+    if n >= cores {
+        return 1 << (i % cores);
+    }
+    (0..cores).filter(|c| c % n == i % n).fold(0, |m, c| m | 1 << c)
+}
+
+#[cfg(test)]
+mod profile_tests {
+ use super::*;
+ #[test]
+ fn account_profile_limits_and_manual_overrides_coexist(){
+  let global=Settings::default();
+  let profile=crate::performance::Profile{adaptive:Some(crate::model::Adaptive{enabled:true,background:Limits{cpu_cap:Some(15),eco:true,..Default::default()}}),..Default::default()};
+  let own=crate::performance::overlay(&global,Some(&profile));
+  let manual=Limits{cpu_cap:Some(30),..Default::default()};
+  assert_eq!(effective(manual,false,&own,Some(5)),Limits{eco:true,..manual});
+  assert_eq!(effective(manual,true,&own,Some(5)),manual);
+  assert_eq!(effective(Limits::default(),false,&own,None).cpu_cap,Some(15));
+ }
+ #[test]
+ fn imported_windows_limits_do_not_disable_mac_limits(){
+  let manual=Limits{cpu_cap:Some(20),eco:true,affinity:Some(3),trim_every_min:Some(5)};
+  assert_eq!(effective(manual,true,&Settings::default(),None),Limits{cpu_cap:Some(20),eco:true,..Default::default()});
+ }
 }
