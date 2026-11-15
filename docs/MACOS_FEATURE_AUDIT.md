@@ -404,7 +404,8 @@ The Mac-only App Nap and allocator-release controls are outside the shared regis
 - Frontend production build: passed (TypeScript, i18n validation, Vite).
 - Sounds/news/liquid/look checks: passed.
 - Rust locked suite: **517 passed, 0 failed, 5 ignored**. Ignored tests include live-service/diagnostic probes; they are not counted as passes.
-- Apple Silicon app bundle: built. Local toolchain reported an optional debug-symbol stripping warning (missing LLVM dylib); linking/bundling succeeded.
+- Native anti-AFK event-construction checks: passed without posting input.
+- Apple Silicon app bundle: built, arm64 verified, ad-hoc signed and strict signature verification passed. Local toolchain reported an optional debug-symbol stripping warning (missing LLVM dylib); linking/bundling succeeded.
 - Added unit coverage for per-account profile limits/manual overrides and stripping unsupported Windows limits while preserving Mac CPU/priority settings.
 - Windows CI must validate Windows compilation/tests; a Mac build does not prove that platform.
 - No authenticated account workflows or new performance benchmark were run. No automatic RAM-reduction guarantee.
