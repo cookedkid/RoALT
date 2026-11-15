@@ -34,7 +34,7 @@ Checked November 14, 2026. Upstream: [v1.2.301](https://github.com/inspectsoftwa
 | Secret export | Shared reveal/copy/export and clipboard cleanup safeguards. Windows DPAPI data cannot simply be copied to Mac; use encrypted export. |
 | Data tools | Shared data folder info/open/move, backups, logs open/clean, diagnostic export/redaction and debug view. Browser reset has no persistent Mac profiles to erase. |
 | Launch targets | Shared public/private/reserved-server targets, URL parsing, target validation, favourites, reorder, per-favourite options, server selection and friend join candidates. |
-| Batch launch | Shared stagger, progress, cancel, retry, selection and group options. Native Mac launch/PID identity retained. |
+| Batch launch | Shared stagger, progress, cancel, retry, selection, group options and different-server strategies (own private/random/closest). Native Mac launch/PID identity retained. |
 | Multi-instance | Mac equivalent: installed Roblox executable and singleton semaphore handling; Windows handle takeover/Job mechanism not used. |
 | Shared-login protection | Mac equivalent: child sandbox blocks known cookie/HTTP stores. Not all Roblox shared data isolated; sandbox-exec is deprecated. |
 | Client state | Shared ticket/run/join/in states, loading and ended state, logs, join/server history, current game, uptime, ended-list clear and retry/stop-relaunch. Actual current-client log markers need game testing. |
@@ -53,9 +53,9 @@ Checked November 14, 2026. Upstream: [v1.2.301](https://github.com/inspectsoftwa
 | Previews | Mac equivalent: ScreenCaptureKit screenshot previews, visible-card scheduling, error message on missing permission, 2/5/10 FPS with aggregate 10 requests/s. Minimized clients retain a last frame, not live capture. |
 | Window controls | Mac equivalent: show, minimize/restore, all-client operations, geometry restore and AX tiling. Requires Accessibility. |
 | Tiny/Fit layouts | Partial: shared slot geometry adapted to logical Mac points; main display only, conservative title-frame approximation. Roblox minimum size enforced (observed 800×632); no forced Windows-size bypass. |
-| Invisible/click-through windows/DWM | Unavailable: no Windows style removal, hidden live thumbnail overlay or click-through rendering. |
+| DWM overlays / old ghost windows | Windows DWM fallback overlays are unavailable on Mac. Upstream removed the old ghost-window/hidden-live-preview feature before this baseline; that removal is not a new Mac port gap. Mac respects Roblox minimum size rather than removing native window styles. |
 | Audio muting | Unavailable per client/on launch. UI sounds are separate and available. |
-| Games and servers | Shared game metadata/stats, popular discovery, target-place resolution, server list/filter/join, history, last-server handling and blocked-subplace fix. |
+| Games and servers | Shared game metadata/stats, players/visits/likes, age/avatar type, places, passes/prices, badges/rarity, popular discovery, target-place resolution, server list/filter/join, history, last-server handling and blocked-subplace fix. Embedded website picker remains unavailable. |
 | Social | Shared friends requests/accept/decline/decline-all, befriending selected accounts and player statistics/value. Mutations need real-account acceptance. |
 | Avatar/outfits | Shared list, wear, save, rename and delete. |
 | Trades/limiteds | Shared listing, details, accept/decline, valuations and thumbnails. No live purchase/trade performed. |
@@ -72,6 +72,25 @@ Checked November 14, 2026. Upstream: [v1.2.301](https://github.com/inspectsoftwa
 | App Nap | Mac-specific opt-in installed-bundle-domain override, next-launch effect and restoration. May increase power usage. |
 | Watchdog | Unavailable Windows native stack snapshots, hang worker inspection and forced application restart. Shared UI recovery changes included, not an equivalent native watchdog. |
 | Signing/platform | Apple Silicon arm64 ad-hoc preview only; no Developer ID/notarization, Intel/universal or Windows installer in Mac download. |
+
+### Smaller additions and upstream removals
+
+| Feature | Status |
+|---|---|
+| Account/tab/section drag ordering and keyboard ordering | Shared; saved order retained. |
+| Global refresh button and F5 | Shared. |
+| Animated background freeze while playing | Shared; GIF/WebP support and size validation retained. |
+| Sponsor, supporters, donate and Discord links | Shared upstream content/links; not a Mac-specific service. |
+| Community online/accounts counters | Shared upstream service, random per-launch ID plus client count; disable in About to stop pings. |
+| Opt-in Rolimons valuations | Shared; remote-service availability and consent setting retained. |
+| Game/player toolbar and embedded page cards | API/detail data shared; embedding a card into a Roblox webpage is unavailable with protected Browse. |
+| Demo website build | Upstream browser mock/build scripts retained; not a real Roblox client. Not run as a release acceptance check. |
+| Per-account log selection, 403 backoff, cookie reread | Shared launch/tracker fixes; Mac PID/start-time/native log association retained. |
+| Debug clear across restarts, CSV exports, limit badges | Shared; native limit badges reflect the Mac planner. |
+| Tray webview memory target | Shared hide/poll suspension retained; Windows WebView2 memory-target/trim API has no implementation in WKWebView here. |
+| Macros / AutoHotkey v2 | Removed by upstream in 1.0.1; not included in latest Windows or this Mac baseline. |
+| Old background posted-key anti-AFK mode | Removed by upstream in 0.9.2 after its tests; not reintroduced on Mac. |
+| Native Windows autopsy and process watchdog | Not ported; Mac crash reports are a separate, narrower implementation. |
 
 ## Individual IPC command inventory
 
